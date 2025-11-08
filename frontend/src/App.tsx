@@ -14,6 +14,8 @@ import {
 } from './api';
 import type { Asset, FileNode, FileContent, Session } from './types';
 
+type View = 'dashboard' | 'practice';
+
 function App() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetLoading, setAssetLoading] = useState(false);
@@ -29,6 +31,7 @@ function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [flashError, setFlashError] = useState(false);
+  const [view, setView] = useState<View>('dashboard');
   const errorTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -62,6 +65,7 @@ function App() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!fileContent) return;
+      if (view !== 'practice') return;
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName ?? '')) {
         return;
       }
@@ -95,7 +99,7 @@ function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [fileContent, cursor]);
+  }, [fileContent, cursor, view]);
 
   const progress = useMemo(() => {
     if (!fileContent) return 0;
@@ -161,6 +165,7 @@ function App() {
     setCursor(0);
     setErrors(0);
     setElapsedSeconds(0);
+    setView('dashboard');
     await loadTree(id);
   }
 
@@ -175,6 +180,7 @@ function App() {
       setErrors(sessionData.errors ?? 0);
       setElapsedSeconds(sessionData.durationSeconds ?? 0);
       setFileContent(content);
+      setView('practice');
     } catch (err) {
       setMessage((err as Error).message);
     }
@@ -198,61 +204,181 @@ function App() {
     return sessionData;
   }
 
-  return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div>
-          <h1>Code Copy Book</h1>
-          <p className="muted">上传源码 → 选择文件 → 键入临摹，逐字加深。</p>
+  function exitPractice() {
+    setView('dashboard');
+  }
+
+  if (view === 'practice') {
+    return (
+      <div className="practice-page">
+        <header className="practice-topbar">
+          <div className="topbar-left">
+            <button className="ghost" onClick={exitPractice}>
+              ← 返回素材库
+            </button>
+            <div>
+              <p className="eyebrow">当前文件</p>
+              <h2>{selectedPath ?? '未选择文件'}</h2>
+              {fileContent && <p className="subtitle">语言：{fileContent.language.toUpperCase()}</p>}
+            </div>
+          </div>
+          <div className="topbar-stats">
+            <div>
+              <span>进度</span>
+              <strong>{progress}%</strong>
+            </div>
+            <div>
+              <span>准确率</span>
+              <strong>{accuracy}%</strong>
+            </div>
+            <div>
+              <span>用时</span>
+              <strong>{formatDuration(elapsedSeconds)}</strong>
+            </div>
+          </div>
+        </header>
+        {message && (
+          <div className="alert floating" onClick={() => setMessage(null)}>
+            {message}
+          </div>
+        )}
+        <div className="practice-main">
+          <div className="practice-focus">
+            <div className="practice-progress">
+              <div className="progress-thumb" style={{ width: `${progress}%` }} />
+            </div>
+            <PracticeCanvas content={fileContent} cursor={cursor} errorFlash={flashError} />
+          </div>
+          <aside className="practice-side">
+            <div className="side-card">
+              <h4>会话信息</h4>
+              <p>错误次数：{errors}</p>
+              <p>估算 WPM：{computeWPM(cursor, elapsedSeconds)}</p>
+              <p>Session ID：{session?.id}</p>
+            </div>
+            <div className="side-card">
+              <h4>提示</h4>
+              <ul>
+                <li>按 Backspace 可以回到上一个字符。</li>
+                <li>完成所有字符后自动保持 100% 进度。</li>
+                <li>每 1.2 秒自动同步进度，刷新不会丢失。</li>
+              </ul>
+            </div>
+          </aside>
         </div>
-        <label className={`upload-button ${uploading ? 'loading' : ''}`}>
-          <input type="file" onChange={handleUpload} accept=".zip,.go,.ts,.tsx,.js,.jsx,.py,.java,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.txt" />
-          {uploading ? '上传中…' : '上传文件 / 压缩包'}
-        </label>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <header className="hero">
+        <div>
+          <p className="eyebrow">代码临摹工作室</p>
+          <h1>挑选最爱的源码，逐字临摹</h1>
+          <p className="subtitle">上传文件或项目压缩包，选择文件后在右侧工作区跟随浅色字帖逐个字符键入。</p>
+          <div className="hero-actions">
+            <label className={`upload-button ${uploading ? 'loading' : ''}`}>
+              <input
+                type="file"
+                onChange={handleUpload}
+                accept=".zip,.go,.ts,.tsx,.js,.jsx,.py,.java,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.txt"
+              />
+              {uploading ? '上传中…' : '上传文件 / 压缩包'}
+            </label>
+            <button className="secondary" onClick={refreshAssets} disabled={assetLoading}>
+              {assetLoading ? '同步中…' : '刷新素材'}
+            </button>
+          </div>
+        </div>
+        <div className="hero-card">
+          <p>当前状态</p>
+          <h3>{fileContent ? selectedPath : '尚未选择文件'}</h3>
+          <ul>
+            <li>进度 <strong>{progress}%</strong></li>
+            <li>准确率 <strong>{accuracy}%</strong></li>
+            <li>用时 <strong>{formatDuration(elapsedSeconds)}</strong></li>
+          </ul>
+        </div>
       </header>
 
       {message && (
-        <div className="toast" onClick={() => setMessage(null)}>
+        <div className="alert" onClick={() => setMessage(null)}>
           {message}
         </div>
       )}
 
-      <main className="app-main">
-        <section className="panel">
-          <div className="panel-header">
-            <h2>素材</h2>
-            {assetLoading && <span className="spinner" />}
+      <section className="stats-row">
+        <div className="stat-card">
+          <span>当前进度</span>
+          <strong>{progress}%</strong>
+          <div className="progress-track">
+            <div className="progress-thumb" style={{ width: `${progress}%` }} />
           </div>
-          <AssetList assets={assets} selectedId={selectedAsset} onSelect={handleSelectAsset} />
-          <p className="muted tip">上传文件夹时，请先打包为 .zip。</p>
-        </section>
+        </div>
+        <div className="stat-card">
+          <span>准确率</span>
+          <strong>{accuracy}%</strong>
+          <p className="stat-detail">错误次数 {errors}</p>
+        </div>
+        <div className="stat-card">
+          <span>键入时间</span>
+          <strong>{formatDuration(elapsedSeconds)}</strong>
+          <p className="stat-detail">约 {computeWPM(cursor, elapsedSeconds)} WPM</p>
+        </div>
+      </section>
 
-        <section className="panel">
-          <div className="panel-header">
-            <h2>文件树</h2>
-            {treeLoading && <span className="spinner" />}
+      <div className="workspace">
+        <aside className="sidebar">
+          <div className="card">
+            <div className="card-header">
+              <h3>素材库</h3>
+              {assetLoading && <span className="spinner" />}
+            </div>
+            <AssetList assets={assets} selectedId={selectedAsset} onSelect={handleSelectAsset} />
+            <p className="muted tip">支持单文件或 ZIP，大小建议 &lt; 20MB。</p>
           </div>
-          {selectedAsset ? (
-            <FileTree nodes={tree} activePath={selectedPath} onSelect={handleSelectFile} />
-          ) : (
-            <p className="muted">先选择一个素材，然后展开文件。</p>
-          )}
-        </section>
 
-        <section className="panel practice">
-          <div className="panel-header">
-            <h2>临摹区域</h2>
-            {fileContent && (
-              <div className="stats">
-                <span>进度 {progress}%</span>
-                <span>准确率 {accuracy}%</span>
-                <span>时间 {formatDuration(elapsedSeconds)}</span>
-              </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>文件 / 模块</h3>
+              {treeLoading && <span className="spinner" />}
+            </div>
+            {selectedAsset ? (
+              <FileTree nodes={tree} activePath={selectedPath} onSelect={handleSelectFile} />
+            ) : (
+              <div className="empty-card">先选择一个素材查看文件结构。</div>
             )}
           </div>
-          <PracticeCanvas content={fileContent} cursor={cursor} errorFlash={flashError} />
+        </aside>
+
+        <section className="practice-area placeholder">
+          <div className="practice-head">
+            <div>
+              <p className="eyebrow">临摹区域</p>
+              <h2>{selectedPath ?? '等待选择文件'}</h2>
+              {fileContent && <p className="subtitle">语言：{fileContent.language.toUpperCase()}</p>}
+            </div>
+            <div className="session-meta">
+              <span>进度 {progress}%</span>
+              <span>准确率 {accuracy}%</span>
+              <span>时间 {formatDuration(elapsedSeconds)}</span>
+            </div>
+          </div>
+          <div className="practice-placeholder">
+            {selectedPath ? (
+              <div>
+                <p>准备就绪，点击下方按钮进入临摹页面。</p>
+                <button className="primary" onClick={() => setView('practice')} disabled={!fileContent}>
+                  进入临摹
+                </button>
+              </div>
+            ) : (
+              <p>选择一个文件开始临摹。</p>
+            )}
+          </div>
         </section>
-      </main>
+      </div>
     </div>
   );
 }
@@ -278,6 +404,12 @@ function formatDuration(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function computeWPM(chars: number, seconds: number) {
+  if (seconds === 0) return 0;
+  const words = chars / 5;
+  return Math.max(0, Math.round((words / seconds) * 60));
 }
 
 export default App;

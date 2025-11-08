@@ -48,7 +48,6 @@ func envOr(key, fallback string) string {
 }
 
 func mountFrontend(apiHandler http.Handler, dir string) http.Handler {
-	fileServer := http.FileServer(http.Dir(dir))
 	indexPath := filepath.Join(dir, "index.html")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,9 +64,27 @@ func mountFrontend(apiHandler http.Handler, dir string) http.Handler {
 			return
 		}
 		if info, err := os.Stat(target); err == nil && !info.IsDir() {
-			fileServer.ServeHTTP(w, r)
+			serveFile(w, r, target, info.IsDir())
 			return
 		}
-		http.ServeFile(w, r, indexPath)
+		serveIndex(w, r, indexPath)
 	})
+}
+
+func serveFile(w http.ResponseWriter, r *http.Request, path string, isDir bool) {
+	if strings.HasSuffix(path, ".html") || strings.HasSuffix(path, ".htm") {
+		noCache(w)
+	}
+	http.ServeFile(w, r, path)
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request, indexPath string) {
+	noCache(w)
+	http.ServeFile(w, r, indexPath)
+}
+
+func noCache(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 }

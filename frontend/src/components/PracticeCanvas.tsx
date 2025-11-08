@@ -39,9 +39,8 @@ export function PracticeCanvas({ content, cursor, errorFlash }: PracticeCanvasPr
       </div>
       <div className="code-wrapper">
         <pre className="code-layer base">{content.content}</pre>
-        <pre className="code-layer overlay">
+        <pre className="code-layer overlay" aria-hidden="true">
           <span className="code-completed">{completed}</span>
-          <span className="code-current">{currentChar}</span>
           <span className="code-rest">{remaining}</span>
         </pre>
       </div>

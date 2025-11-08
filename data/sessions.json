@@ -1,12 +1,32 @@
 {
+  "2b0135a4641d122c4902": {
+    "id": "2b0135a4641d122c4902",
+    "assetId": "a0b469563b68af7ef8f6",
+    "relPath": "logger.go",
+    "cursor": 0,
+    "errors": 0,
+    "durationSeconds": 0,
+    "createdAt": "2025-11-08T05:00:49.046035Z",
+    "updatedAt": "2025-11-08T05:00:49.046035Z"
+  },
   "3f4eeee36eaa4a64362e": {
     "id": "3f4eeee36eaa4a64362e",
     "assetId": "a0b469563b68af7ef8f6",
     "relPath": "logger.go",
-    "cursor": 168,
-    "errors": 12,
-    "durationSeconds": 329,
+    "cursor": 388,
+    "errors": 25,
+    "durationSeconds": 805,
     "createdAt": "2025-11-07T12:30:24.1467Z",
-    "updatedAt": "2025-11-08T04:18:34.077904Z"
+    "updatedAt": "2025-11-08T04:55:59.709253Z"
+  },
+  "d0bbf7e7d766d59c5a5b": {
+    "id": "d0bbf7e7d766d59c5a5b",
+    "assetId": "a0b469563b68af7ef8f6",
+    "relPath": "logger.go",
+    "cursor": 0,
+    "errors": 0,
+    "durationSeconds": 0,
+    "createdAt": "2025-11-08T04:25:20.353368Z",
+    "updatedAt": "2025-11-08T04:25:20.353368Z"
   }
 }
