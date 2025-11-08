@@ -1,0 +1,14 @@
+services:
+  codecopybook:
+    build: .
+    image: codecopybook:local
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - DATA_DIR=/data
+      - FRONTEND_DIR=/app/frontend
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+    restart: unless-stopped
