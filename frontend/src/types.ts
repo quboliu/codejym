@@ -1,5 +1,6 @@
 export interface Asset {
   id: string;
+  userId: string;
   name: string;
   sizeBytes: number;
   fileCount: number;
@@ -24,6 +25,7 @@ export interface FileContent {
 
 export interface Session {
   id: string;
+  userId: string;
   assetId: string;
   relPath: string;
   cursor: number;
@@ -31,4 +33,17 @@ export interface Session {
   durationSeconds: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
 }

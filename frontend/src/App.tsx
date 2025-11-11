@@ -6,19 +6,26 @@ import { FileTree } from './components/FileTree';
 import { PracticeCanvas } from './components/PracticeCanvas';
 import {
   createSession,
+  fetchCurrentUser,
   fetchFileContent,
   fetchFileTree,
   fetchSession,
   listAssets,
+  login,
   patchSession,
+  setAuthToken,
+  signup,
   uploadAsset,
   uploadPastedAsset,
 } from './api';
-import type { Asset, FileNode, FileContent, Session } from './types';
+import type { Asset, FileNode, FileContent, Session, User } from './types';
 
 type View = 'dashboard' | 'practice';
 
+const AUTH_TOKEN_KEY = 'codecopybook_token';
+
 function App() {
+  const [user, setUser] = useState<User | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetLoading, setAssetLoading] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
@@ -35,13 +42,47 @@ function App() {
   const [pasting, setPasting] = useState(false);
   const [pasteFilename, setPasteFilename] = useState('');
   const [pasteContent, setPasteContent] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   const [flashError, setFlashError] = useState(false);
   const [view, setView] = useState<View>('dashboard');
   const errorTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    refreshAssets();
+    const stored = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!stored) {
+      return;
+    }
+    setAuthToken(stored);
+    fetchCurrentUser()
+      .then((current) => {
+        setUser(current);
+      })
+      .catch(() => {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        setAuthToken(null);
+      });
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setAssets([]);
+      setSelectedAsset(null);
+      setTree([]);
+      setSelectedPath(null);
+      setFileContent(null);
+      setSession(null);
+      setCursor(0);
+      setErrors(0);
+      setElapsedSeconds(0);
+      setView('dashboard');
+      return;
+    }
+    refreshAssets(user);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!session || !fileContent) {
@@ -119,14 +160,19 @@ function App() {
 
   const canSkipLine = !!(fileContent && cursor < fileContent.content.length);
 
-  async function refreshAssets() {
+  async function refreshAssets(targetUser?: User | null) {
+    const activeUser = targetUser ?? user;
+    if (!activeUser) {
+      return;
+    }
     setAssetLoading(true);
     try {
       const data = await listAssets();
       setAssets(data);
       if (data.length && !selectedAsset) {
-        setSelectedAsset(data[0].id);
-        loadTree(data[0].id);
+        const first = data[0];
+        setSelectedAsset(first.id);
+        await loadTree(first.id);
       }
     } catch (err) {
       setMessage((err as Error).message);
@@ -135,14 +181,66 @@ function App() {
     }
   }
 
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthLoading(true);
+    try {
+      const email = authEmail.trim();
+      const password = authPassword;
+      if (!email || !password) {
+        setMessage('请输入邮箱和密码');
+        return;
+      }
+      const name = authName.trim();
+      if (authMode === 'signup' && !name) {
+        setMessage('请输入昵称');
+        return;
+      }
+      const response =
+        authMode === 'login' ? await login(email, password) : await signup(email, password, name);
+      localStorage.setItem(AUTH_TOKEN_KEY, response.token);
+      setAuthToken(response.token);
+      setUser(response.user);
+      setAuthPassword('');
+      if (authMode === 'signup') {
+        setAuthName('');
+      }
+      setMessage(authMode === 'login' ? '登录成功' : '注册成功，已自动登录');
+    } catch (err) {
+      setMessage((err as Error).message);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    setAuthToken(null);
+    setUser(null);
+    setAssets([]);
+    setSelectedAsset(null);
+    setTree([]);
+    setSelectedPath(null);
+    setFileContent(null);
+    setSession(null);
+    setCursor(0);
+    setErrors(0);
+    setElapsedSeconds(0);
+    setMessage('已退出登录');
+  }
+
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!user) {
+      setMessage('请先登录');
+      return;
+    }
     setUploading(true);
     try {
       const created = await uploadAsset(file);
       setMessage('上传成功');
-      await refreshAssets();
+      await refreshAssets(user);
       await handleSelectAsset(created.id);
     } catch (err) {
       setMessage((err as Error).message);
@@ -154,6 +252,10 @@ function App() {
 
   async function handlePasteSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!user) {
+      setMessage('请先登录');
+      return;
+    }
     if (!pasteContent.trim()) {
       setMessage('请粘贴一些内容再上传');
       return;
@@ -165,7 +267,7 @@ function App() {
       setMessage('粘贴内容已保存');
       setPasteContent('');
       setPasteFilename('');
-      await refreshAssets();
+      await refreshAssets(user);
       await handleSelectAsset(created.id);
     } catch (err) {
       setMessage((err as Error).message);
@@ -187,6 +289,7 @@ function App() {
   }
 
   async function handleSelectAsset(id: string) {
+    if (!user) return;
     setSelectedAsset(id);
     setSelectedPath(null);
     setFileContent(null);
@@ -199,7 +302,7 @@ function App() {
   }
 
   async function handleSelectFile(path: string) {
-    if (!selectedAsset) return;
+    if (!selectedAsset || !user) return;
     setSelectedPath(path);
     try {
       const content = await fetchFileContent(selectedAsset, path);
@@ -216,7 +319,7 @@ function App() {
   }
 
   async function ensureSession(assetId: string, filePath: string) {
-    const storageKey = sessionKey(assetId, filePath);
+    const storageKey = sessionKey(user?.id ?? 'anon', assetId, filePath);
     let sessionData: Session | null = null;
     const existingId = localStorage.getItem(storageKey);
     if (existingId) {
@@ -245,6 +348,60 @@ function App() {
     const newlineIndex = fileContent.content.indexOf('\n', cursor);
     const nextCursor = newlineIndex === -1 ? fileContent.content.length : newlineIndex + 1;
     setCursor(nextCursor);
+  }
+
+  if (!user) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1>代码临摹工作室</h1>
+          <p className="auth-subtitle">登录后即可上传素材并同步练习进度。</p>
+          {message && (
+            <div className="alert" onClick={() => setMessage(null)}>
+              {message}
+            </div>
+          )}
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            <input
+              type="email"
+              placeholder="邮箱"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              required
+            />
+            {authMode === 'signup' && (
+              <input
+                type="text"
+                placeholder="昵称 / 显示名称"
+                value={authName}
+                onChange={(e) => setAuthName(e.target.value)}
+                required
+              />
+            )}
+            <input
+              type="password"
+              placeholder="密码"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              required
+            />
+            <button type="submit" className="primary" disabled={authLoading}>
+              {authLoading ? '处理中…' : authMode === 'login' ? '登录' : '注册并登录'}
+            </button>
+          </form>
+          <button
+            type="button"
+            className="ghost-link"
+            onClick={() => {
+              setAuthMode((prev) => (prev === 'login' ? 'signup' : 'login'));
+              setMessage(null);
+            }}
+          >
+            {authMode === 'login' ? '没有账户？注册一个' : '已有账户？直接登录'}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (view === 'practice') {
@@ -339,9 +496,19 @@ function App() {
               />
               {uploading || pasting ? '上传中…' : '上传文件 / 压缩包'}
             </label>
-            <button className="secondary" onClick={refreshAssets} disabled={assetLoading}>
+            <button className="secondary" onClick={() => refreshAssets()} disabled={assetLoading}>
               {assetLoading ? '同步中…' : '刷新素材'}
             </button>
+            <button className="secondary logout" onClick={handleLogout}>
+              退出登录
+            </button>
+          </div>
+          <div className="user-pill">
+            <div>
+              <p className="eyebrow">当前用户</p>
+              <h4>{user.name}</h4>
+              <p className="user-email">{user.email}</p>
+            </div>
           </div>
           <div className="paste-upload">
             <div>
@@ -479,8 +646,8 @@ function mapKeyToChar(event: KeyboardEvent): string | null {
   return null;
 }
 
-function sessionKey(assetId: string, path: string) {
-  return `ccb:${assetId}:${path}`;
+function sessionKey(userId: string | null, assetId: string, path: string) {
+  return `ccb:${userId ?? 'anon'}:${assetId}:${path}`;
 }
 
 function formatDuration(seconds: number) {

@@ -1,12 +1,21 @@
-import type { Asset, FileContent, FileNode, Session } from './types';
+import type { Asset, AuthResponse, FileContent, FileNode, Session, User } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isForm = init?.body instanceof FormData;
   const finalHeaders = new Headers(init?.headers);
   if (!isForm && !finalHeaders.has('Content-Type')) {
     finalHeaders.set('Content-Type', 'application/json');
+  }
+  if (authToken) {
+    finalHeaders.set('Authorization', `Bearer ${authToken}`);
   }
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -36,6 +45,24 @@ async function extractError(response: Response) {
 
 export function listAssets() {
   return request<Asset[]>('/api/assets');
+}
+
+export function signup(email: string, password: string, name: string) {
+  return request<AuthResponse>('/api/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, name }),
+  });
+}
+
+export function login(email: string, password: string) {
+  return request<AuthResponse>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function fetchCurrentUser() {
+  return request<User>('/api/auth/me');
 }
 
 export function uploadAsset(file: File) {

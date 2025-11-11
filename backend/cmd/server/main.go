@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"codecopybook/internal/api"
 	"codecopybook/internal/storage"
@@ -15,14 +18,33 @@ import (
 func main() {
 	addr := flag.String("addr", envOr("ADDR", ":8080"), "server listen address")
 	dataDir := flag.String("data", envOr("DATA_DIR", "data"), "data directory for uploads and metadata")
+	dbURL := flag.String("db", envOr("DATABASE_URL", ""), "PostgreSQL connection string")
+	authSecret := flag.String("auth-secret", envOr("AUTH_SECRET", ""), "HMAC secret for auth tokens")
 	flag.Parse()
 
-	store, err := storage.New(*dataDir)
+	if *dbURL == "" {
+		log.Fatal("DATABASE_URL / -db is required")
+	}
+	if *authSecret == "" {
+		log.Fatal("AUTH_SECRET / -auth-secret is required")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, *dbURL)
+	if err != nil {
+		log.Fatalf("failed to connect to postgres: %v", err)
+	}
+	defer pool.Close()
+
+	store, err := storage.New(pool, *dataDir)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}
+	if err := store.Migrate(ctx); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
 
-	server := api.NewServer(store, log.New(os.Stdout, "[codecopybook] ", log.LstdFlags))
+	server := api.NewServer(store, log.New(os.Stdout, "[codecopybook] ", log.LstdFlags), []byte(*authSecret))
 	handler := server.Handler()
 
 	if frontendDir := envOr("FRONTEND_DIR", ""); frontendDir != "" {

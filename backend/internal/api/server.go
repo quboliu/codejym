@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,31 +17,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+
 	"codecopybook/internal/storage"
 )
 
 // Server wires HTTP handlers with storage.
 type Server struct {
-	store  *storage.Storage
-	logger *log.Logger
+	store      *storage.Storage
+	logger     *log.Logger
+	authSecret []byte
 }
 
-func NewServer(store *storage.Storage, logger *log.Logger) *Server {
+const authTokenTTL = 30 * 24 * time.Hour
+
+type userContextKey struct{}
+
+func NewServer(store *storage.Storage, logger *log.Logger, authSecret []byte) *Server {
 	if logger == nil {
 		logger = log.New(os.Stdout, "[api] ", log.LstdFlags)
 	}
-	return &Server{store: store, logger: logger}
+	return &Server{store: store, logger: logger, authSecret: authSecret}
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
-	mux.HandleFunc("/api/assets/upload", s.handleAssetUpload)
-	mux.HandleFunc("/api/assets/paste", s.handleAssetPaste)
-	mux.HandleFunc("/api/assets", s.handleAssets)
-	mux.HandleFunc("/api/assets/", s.handleAssetByID)
-	mux.HandleFunc("/api/sessions", s.handleSessions)
-	mux.HandleFunc("/api/sessions/", s.handleSessionByID)
+	mux.HandleFunc("/api/auth/signup", s.handleSignup)
+	mux.HandleFunc("/api/auth/login", s.handleLogin)
+	mux.HandleFunc("/api/auth/me", s.withAuth(s.handleAuthMe))
+	mux.HandleFunc("/api/assets/upload", s.withAuth(s.handleAssetUpload))
+	mux.HandleFunc("/api/assets/paste", s.withAuth(s.handleAssetPaste))
+	mux.HandleFunc("/api/assets", s.withAuth(s.handleAssets))
+	mux.HandleFunc("/api/assets/", s.withAuth(s.handleAssetByID))
+	mux.HandleFunc("/api/sessions", s.withAuth(s.handleSessions))
+	mux.HandleFunc("/api/sessions/", s.withAuth(s.handleSessionByID))
 	return withCORS(logRequests(mux, s.logger))
 }
 
@@ -48,12 +60,142 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	var payload struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json payload")
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(payload.Email))
+	password := strings.TrimSpace(payload.Password)
+	name := strings.TrimSpace(payload.Name)
+	if email == "" || password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+	if len(password) < 6 {
+		writeError(w, http.StatusBadRequest, "password must be at least 6 characters")
+		return
+	}
+	if name == "" {
+		name = email
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to hash password")
+		return
+	}
+	userID, err := storage.RandomID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to allocate id")
+		return
+	}
+	user := &storage.User{
+		ID:           userID,
+		Email:        email,
+		Name:         name,
+		PasswordHash: string(hashed),
+	}
+	if err := s.store.CreateUser(r.Context(), user); err != nil {
+		if storage.IsDuplicate(err) {
+			writeError(w, http.StatusConflict, "email already registered")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to create user")
+		}
+		return
+	}
+	token, err := s.issueToken(user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+	user.PasswordHash = ""
+	writeJSON(w, http.StatusCreated, authResponse{
+		Token: token,
+		User:  toUserDTO(user),
+	})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	var payload struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json payload")
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(payload.Email))
+	password := payload.Password
+	if email == "" || password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+	user, err := s.store.GetUserByEmail(r.Context(), email)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "invalid credentials")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to query user")
+		}
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	token, err := s.issueToken(user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+	user.PasswordHash = ""
+	writeJSON(w, http.StatusOK, authResponse{
+		Token: token,
+		User:  toUserDTO(user),
+	})
+}
+
+func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
+	writeJSON(w, http.StatusOK, toUserDTO(user))
+}
+
 func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	assets := s.store.ListAssets()
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
+	assets, err := s.store.ListAssets(r.Context(), user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load assets")
+		return
+	}
 	resp := make([]assetDTO, 0, len(assets))
 	for _, a := range assets {
 		resp = append(resp, toAssetDTO(a))
@@ -105,7 +247,13 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assetDir := s.store.AssetDir(assetID)
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
+
+	assetDir := s.store.AssetDir(user.ID, assetID)
 	if err := os.MkdirAll(assetDir, 0o755); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare storage")
 		return
@@ -147,13 +295,14 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 
 	asset := &storage.Asset{
 		ID:         assetID,
+		UserID:     user.ID,
 		Name:       deriveAssetName(header),
 		RootPath:   assetDir,
 		SizeBytes:  bytesTotal,
 		FileCount:  fileCount,
 		SourceName: header.Filename,
 	}
-	if err := s.store.RegisterAsset(asset); err != nil {
+	if err := s.store.RegisterAsset(r.Context(), asset); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist asset")
 		return
 	}
@@ -188,12 +337,18 @@ func (s *Server) handleAssetPaste(w http.ResponseWriter, r *http.Request) {
 	}
 	data := []byte(content)
 
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
+
 	assetID, err := storage.RandomID()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to allocate id")
 		return
 	}
-	assetDir := s.store.AssetDir(assetID)
+	assetDir := s.store.AssetDir(user.ID, assetID)
 	if err := os.MkdirAll(assetDir, 0o755); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare storage")
 		return
@@ -205,13 +360,14 @@ func (s *Server) handleAssetPaste(w http.ResponseWriter, r *http.Request) {
 	}
 	asset := &storage.Asset{
 		ID:         assetID,
+		UserID:     user.ID,
 		Name:       deriveAssetNameFromFilename(filename),
 		RootPath:   assetDir,
 		SizeBytes:  int64(len(data)),
 		FileCount:  1,
 		SourceName: filename,
 	}
-	if err := s.store.RegisterAsset(asset); err != nil {
+	if err := s.store.RegisterAsset(r.Context(), asset); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist asset")
 		return
 	}
@@ -219,6 +375,11 @@ func (s *Server) handleAssetPaste(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssetByID(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/assets/")
 	if trimmed == "" {
 		http.NotFound(w, r)
@@ -228,13 +389,13 @@ func (s *Server) handleAssetByID(w http.ResponseWriter, r *http.Request) {
 	id := segments[0]
 	switch len(segments) {
 	case 1:
-		s.handleAssetRoot(id, w, r)
+		s.handleAssetRoot(user, id, w, r)
 	case 2:
 		switch segments[1] {
 		case "tree":
-			s.handleAssetTree(id, w, r)
+			s.handleAssetTree(user, id, w, r)
 		case "file":
-			s.handleAssetFile(id, w, r)
+			s.handleAssetFile(user, id, w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -243,46 +404,59 @@ func (s *Server) handleAssetByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleAssetRoot(id string, w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAssetRoot(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodDelete:
-		s.deleteAsset(id, w, r)
+		s.deleteAsset(user, id, w, r)
 	case http.MethodGet:
-		if asset, ok := s.store.GetAsset(id); ok {
-			writeJSON(w, http.StatusOK, toAssetDTO(asset))
+		asset, err := s.store.GetAsset(r.Context(), user.ID, id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "asset not found")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to load asset")
+			}
 			return
 		}
-		writeError(w, http.StatusNotFound, "asset not found")
+		writeJSON(w, http.StatusOK, toAssetDTO(asset))
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodDelete)
 	}
 }
 
-func (s *Server) deleteAsset(id string, w http.ResponseWriter, r *http.Request) {
-	asset, ok := s.store.GetAsset(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "asset not found")
+func (s *Server) deleteAsset(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
+	asset, err := s.store.GetAsset(r.Context(), user.ID, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "asset not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load asset")
+		}
 		return
 	}
 	if err := os.RemoveAll(asset.RootPath); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete files")
 		return
 	}
-	if err := s.store.DeleteAsset(id); err != nil {
+	if err := s.store.DeleteAsset(r.Context(), user.ID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete metadata")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleAssetTree(id string, w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAssetTree(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	asset, ok := s.store.GetAsset(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "asset not found")
+	asset, err := s.store.GetAsset(r.Context(), user.ID, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "asset not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load asset")
+		}
 		return
 	}
 	nodes, err := buildTree(asset.RootPath, "")
@@ -293,14 +467,18 @@ func (s *Server) handleAssetTree(id string, w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, nodes)
 }
 
-func (s *Server) handleAssetFile(id string, w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAssetFile(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	asset, ok := s.store.GetAsset(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "asset not found")
+	asset, err := s.store.GetAsset(r.Context(), user.ID, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "asset not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load asset")
+		}
 		return
 	}
 	rel := r.URL.Query().Get("path")
@@ -321,15 +499,25 @@ func (s *Server) handleAssetFile(id string, w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
 	switch r.Method {
 	case http.MethodPost:
-		s.createSession(w, r)
+		s.createSession(user, w, r)
 	default:
 		methodNotAllowed(w, http.MethodPost)
 	}
 }
 
 func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 	if trimmed == "" {
 		http.NotFound(w, r)
@@ -338,15 +526,15 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.Split(trimmed, "/")[0]
 	switch r.Method {
 	case http.MethodGet:
-		s.getSession(id, w, r)
+		s.getSession(user, id, w, r)
 	case http.MethodPatch:
-		s.updateSession(id, w, r)
+		s.updateSession(user, id, w, r)
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPatch)
 	}
 }
 
-func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
+func (s *Server) createSession(user *storage.User, w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		AssetID string `json:"assetId"`
 		Path    string `json:"path"`
@@ -359,9 +547,13 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "assetId and path are required")
 		return
 	}
-	asset, ok := s.store.GetAsset(payload.AssetID)
-	if !ok {
-		writeError(w, http.StatusNotFound, "asset not found")
+	asset, err := s.store.GetAsset(r.Context(), user.ID, payload.AssetID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "asset not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load asset")
+		}
 		return
 	}
 	if _, err := readAssetFile(asset.RootPath, payload.Path); err != nil {
@@ -375,29 +567,38 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	session := &storage.Session{
 		ID:      sessID,
+		UserID:  user.ID,
 		AssetID: payload.AssetID,
 		RelPath: payload.Path,
 	}
-	if err := s.store.CreateSession(session); err != nil {
+	if err := s.store.CreateSession(r.Context(), session); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save session")
 		return
 	}
 	writeJSON(w, http.StatusCreated, session)
 }
 
-func (s *Server) getSession(id string, w http.ResponseWriter, r *http.Request) {
-	session, ok := s.store.GetSession(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "session not found")
+func (s *Server) getSession(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
+	session, err := s.store.GetSession(r.Context(), user.ID, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "session not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load session")
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, session)
 }
 
-func (s *Server) updateSession(id string, w http.ResponseWriter, r *http.Request) {
-	session, ok := s.store.GetSession(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "session not found")
+func (s *Server) updateSession(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
+	session, err := s.store.GetSession(r.Context(), user.ID, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "session not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load session")
+		}
 		return
 	}
 	var payload struct {
@@ -418,15 +619,29 @@ func (s *Server) updateSession(id string, w http.ResponseWriter, r *http.Request
 	if payload.DurationSeconds != nil {
 		session.DurationSeconds = *payload.DurationSeconds
 	}
-	if err := s.store.UpdateSession(session); err != nil {
+	if err := s.store.UpdateSession(r.Context(), session); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update session")
 		return
 	}
 	writeJSON(w, http.StatusOK, session)
 }
 
+type authResponse struct {
+	Token string  `json:"token"`
+	User  userDTO `json:"user"`
+}
+
+type userDTO struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 type assetDTO struct {
 	ID         string    `json:"id"`
+	UserID     string    `json:"userId"`
 	Name       string    `json:"name"`
 	SizeBytes  int64     `json:"sizeBytes"`
 	FileCount  int       `json:"fileCount"`
@@ -452,12 +667,23 @@ type fileContent struct {
 func toAssetDTO(a *storage.Asset) assetDTO {
 	return assetDTO{
 		ID:         a.ID,
+		UserID:     a.UserID,
 		Name:       a.Name,
 		SizeBytes:  a.SizeBytes,
 		FileCount:  a.FileCount,
 		CreatedAt:  a.CreatedAt,
 		UpdatedAt:  a.UpdatedAt,
 		SourceName: a.SourceName,
+	}
+}
+
+func toUserDTO(u *storage.User) userDTO {
+	return userDTO{
+		ID:        u.ID,
+		Email:     u.Email,
+		Name:      u.Name,
+		CreatedAt: u.CreatedAt,
+		UpdatedAt: u.UpdatedAt,
 	}
 }
 
@@ -506,6 +732,78 @@ func withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+			writeError(w, http.StatusUnauthorized, "missing authorization")
+			return
+		}
+		userID, err := s.parseToken(strings.TrimSpace(parts[1]))
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		user, err := s.store.GetUserByID(r.Context(), userID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusUnauthorized, "invalid token")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to load user")
+			}
+			return
+		}
+		ctxUser := *user
+		ctxUser.PasswordHash = ""
+		ctx := context.WithValue(r.Context(), userContextKey{}, &ctxUser)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func (s *Server) issueToken(userID string) (string, error) {
+	if len(s.authSecret) == 0 {
+		return "", errors.New("auth secret not configured")
+	}
+	now := time.Now()
+	claims := jwt.RegisteredClaims{
+		Subject:   userID,
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(authTokenTTL)),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.authSecret)
+}
+
+func (s *Server) parseToken(tokenStr string) (string, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method %v", token.Header["alg"])
+		}
+		return s.authSecret, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	if !ok || !token.Valid {
+		return "", errors.New("invalid token")
+	}
+	return claims.Subject, nil
+}
+
+func currentUser(r *http.Request) *storage.User {
+	if r == nil {
+		return nil
+	}
+	user, _ := r.Context().Value(userContextKey{}).(*storage.User)
+	return user
 }
 
 func detectZip(f *os.File) (bool, error) {
