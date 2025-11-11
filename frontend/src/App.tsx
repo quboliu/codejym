@@ -311,6 +311,14 @@ function App() {
             </div>
           </aside>
         </div>
+        <button
+          className="skip-line-fab"
+          onClick={skipCurrentLine}
+          disabled={!canSkipLine}
+          aria-label="跳过当前行"
+        >
+          跳过当前行
+        </button>
       </div>
     );
   }
