@@ -112,6 +112,8 @@ function App() {
     return Math.max(0, Math.round((cursor / (cursor + errors)) * 100));
   }, [cursor, errors]);
 
+  const canSkipLine = !!(fileContent && cursor < fileContent.content.length);
+
   async function refreshAssets() {
     setAssetLoading(true);
     try {
@@ -208,6 +210,16 @@ function App() {
     setView('dashboard');
   }
 
+  function skipCurrentLine() {
+    if (!fileContent) return;
+    if (cursor >= fileContent.content.length) {
+      return;
+    }
+    const newlineIndex = fileContent.content.indexOf('\n', cursor);
+    const nextCursor = newlineIndex === -1 ? fileContent.content.length : newlineIndex + 1;
+    setCursor(nextCursor);
+  }
+
   if (view === 'practice') {
     return (
       <div className="practice-page">
@@ -244,6 +256,12 @@ function App() {
         )}
         <div className="practice-main">
           <div className="practice-focus">
+            <div className="practice-toolbar">
+              <p className="toolbar-hint">光标实时标记当前位置，如需跳过整行可使用该按钮。</p>
+              <button className="skip-line-button" onClick={skipCurrentLine} disabled={!canSkipLine}>
+                跳过当前行
+              </button>
+            </div>
             <div className="practice-progress">
               <div className="progress-thumb" style={{ width: `${progress}%` }} />
             </div>

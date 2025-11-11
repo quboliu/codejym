@@ -3,11 +3,11 @@
     "id": "2b0135a4641d122c4902",
     "assetId": "a0b469563b68af7ef8f6",
     "relPath": "logger.go",
-    "cursor": 0,
-    "errors": 0,
-    "durationSeconds": 0,
+    "cursor": 1254,
+    "errors": 38,
+    "durationSeconds": 1149,
     "createdAt": "2025-11-08T05:00:49.046035Z",
-    "updatedAt": "2025-11-08T05:00:49.046035Z"
+    "updatedAt": "2025-11-11T09:04:14.07817Z"
   },
   "3f4eeee36eaa4a64362e": {
     "id": "3f4eeee36eaa4a64362e",
@@ -23,10 +23,10 @@
     "id": "d0bbf7e7d766d59c5a5b",
     "assetId": "a0b469563b68af7ef8f6",
     "relPath": "logger.go",
-    "cursor": 0,
+    "cursor": 19,
     "errors": 0,
-    "durationSeconds": 0,
+    "durationSeconds": 37222,
     "createdAt": "2025-11-08T04:25:20.353368Z",
-    "updatedAt": "2025-11-08T04:25:20.353368Z"
+    "updatedAt": "2025-11-11T09:43:11.378164Z"
   }
 }

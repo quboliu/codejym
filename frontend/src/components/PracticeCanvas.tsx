@@ -8,14 +8,15 @@ interface PracticeCanvasProps {
 }
 
 export function PracticeCanvas({ content, cursor, errorFlash }: PracticeCanvasProps) {
-  const { completed, currentChar, remaining } = useMemo(() => {
+  const { completed, currentChar, remaining, atEnd } = useMemo(() => {
     if (!content) {
-      return { completed: '', currentChar: '', remaining: '' };
+      return { completed: '', currentChar: '', remaining: '', atEnd: true };
     }
     const completedText = content.content.slice(0, cursor);
-    const current = content.content.slice(cursor, cursor + 1);
-    const rest = content.content.slice(cursor + 1);
-    return { completed: completedText, currentChar: current, remaining: rest };
+    const isAtEnd = cursor >= content.content.length;
+    const current = isAtEnd ? '' : content.content.slice(cursor, cursor + 1);
+    const rest = isAtEnd ? '' : content.content.slice(cursor + 1);
+    return { completed: completedText, currentChar: current, remaining: rest, atEnd: isAtEnd };
   }, [content, cursor]);
 
   if (!content) {
@@ -41,6 +42,9 @@ export function PracticeCanvas({ content, cursor, errorFlash }: PracticeCanvasPr
         <pre className="code-layer base">{content.content}</pre>
         <pre className="code-layer overlay" aria-hidden="true">
           <span className="code-completed">{completed}</span>
+          <span className={`code-cursor ${atEnd ? 'code-cursor-end' : ''}`}>
+            {atEnd ? '\u200b' : currentChar}
+          </span>
           <span className="code-rest">{remaining}</span>
         </pre>
       </div>

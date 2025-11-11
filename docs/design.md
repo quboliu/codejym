@@ -48,13 +48,15 @@ Core needs:
 - Use `Monaco` or `PrismJS`. Implementation plan: Prism for lightweight highlight; computed spans with color classes for faint/dark states.
 - Maintain per-character state: `pending`, `active`, `completed`.
 - Provide adjustable opacity slider and font size to mimic copybook.
+- Overlay层包含一个闪烁的光标（blinking caret），实时标记当前应输入的字符；当用户抵达文件尾部时，光标自动停留在末尾，提示练习已完成。
 
 ### 3.4 User Experience
 - Landing page with asset list and upload widget.
 - Practice page layout:
   - Left sidebar: file tree, session stats.
   - Main pane: code canvas with layered text (background reference + typed overlay).
-  - Bottom: typing controls, accuracy meter, per-token progress.
+  - Bottom: typing controls, accuracy meter, per-token progress。
+- 练习工具栏提供“跳过当前行”按钮，可在遇到长注释或暂不想练的段落时直接将光标推进到下一行首；行为同样会同步到会话进度。
 
 ## 4. API Design (REST JSON)
 All endpoints prefixed with `/api`.
