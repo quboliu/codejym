@@ -14,9 +14,13 @@ export function AssetList({ assets, selectedId, onSelect }: AssetListProps) {
     <div className="asset-grid">
       {assets.map((asset) => {
         const active = selectedId === asset.id;
+        const extension = getExtension(asset.sourceName);
         return (
           <button key={asset.id} className={`asset-card ${active ? 'active' : ''}`} onClick={() => onSelect(asset.id)}>
-            <div className="asset-name">{asset.name}</div>
+            <div className="asset-name">
+              {asset.name}
+              {extension && <span className="asset-ext">.{extension}</span>}
+            </div>
             <div className="asset-meta">
               <span>{formatBytes(asset.sizeBytes)}</span>
               <span>·{asset.fileCount} 文件</span>
@@ -27,6 +31,16 @@ export function AssetList({ assets, selectedId, onSelect }: AssetListProps) {
       })}
     </div>
   );
+}
+
+function getExtension(name: string) {
+  const clean = (name ?? '').trim();
+  if (!clean) return '';
+  const lastDot = clean.lastIndexOf('.');
+  if (lastDot <= 0 || lastDot === clean.length - 1) {
+    return '';
+  }
+  return clean.slice(lastDot + 1).toLowerCase();
 }
 
 function formatBytes(bytes: number) {

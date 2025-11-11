@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import './App.css';
 import { AssetList } from './components/AssetList';
 import { FileTree } from './components/FileTree';
@@ -11,6 +12,7 @@ import {
   listAssets,
   patchSession,
   uploadAsset,
+  uploadPastedAsset,
 } from './api';
 import type { Asset, FileNode, FileContent, Session } from './types';
 
@@ -30,6 +32,9 @@ function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const [pasteFilename, setPasteFilename] = useState('');
+  const [pasteContent, setPasteContent] = useState('');
   const [flashError, setFlashError] = useState(false);
   const [view, setView] = useState<View>('dashboard');
   const errorTimer = useRef<number | null>(null);
@@ -144,6 +149,28 @@ function App() {
     } finally {
       setUploading(false);
       event.target.value = '';
+    }
+  }
+
+  async function handlePasteSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!pasteContent.trim()) {
+      setMessage('请粘贴一些内容再上传');
+      return;
+    }
+    const filename = pasteFilename.trim() || 'snippet.txt';
+    setPasting(true);
+    try {
+      const created = await uploadPastedAsset(filename, pasteContent);
+      setMessage('粘贴内容已保存');
+      setPasteContent('');
+      setPasteFilename('');
+      await refreshAssets();
+      await handleSelectAsset(created.id);
+    } catch (err) {
+      setMessage((err as Error).message);
+    } finally {
+      setPasting(false);
     }
   }
 
@@ -296,17 +323,47 @@ function App() {
           <h1>挑选最爱的源码，逐字临摹</h1>
           <p className="subtitle">上传文件或项目压缩包，选择文件后在右侧工作区跟随浅色字帖逐个字符键入。</p>
           <div className="hero-actions">
-            <label className={`upload-button ${uploading ? 'loading' : ''}`}>
+            <label className={`upload-button ${uploading || pasting ? 'loading' : ''}`}>
               <input
                 type="file"
                 onChange={handleUpload}
-                accept=".zip,.go,.ts,.tsx,.js,.jsx,.py,.java,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.txt"
+                accept=".zip,.go,.ts,.tsx,.js,.jsx,.py,.java,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.txt,.sh,.bash,.yaml,.yml,.json,.md,.toml,.conf,.cfg"
               />
-              {uploading ? '上传中…' : '上传文件 / 压缩包'}
+              {uploading || pasting ? '上传中…' : '上传文件 / 压缩包'}
             </label>
             <button className="secondary" onClick={refreshAssets} disabled={assetLoading}>
               {assetLoading ? '同步中…' : '刷新素材'}
             </button>
+          </div>
+          <div className="paste-upload">
+            <div>
+              <p className="eyebrow">快速粘贴</p>
+              <p className="subtitle">没有文件？直接输入文件名并粘贴文本，立即生成素材。</p>
+            </div>
+            <form className="paste-upload-form" onSubmit={handlePasteSubmit}>
+              <input
+                type="text"
+                placeholder="文件名（例如 script.sh）"
+                value={pasteFilename}
+                onChange={(e) => setPasteFilename(e.target.value)}
+                disabled={uploading || pasting}
+              />
+              <textarea
+                placeholder="在这里粘贴内容..."
+                value={pasteContent}
+                onChange={(e) => setPasteContent(e.target.value)}
+                disabled={uploading || pasting}
+              />
+              <div className="paste-upload-actions">
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={pasting || uploading || !pasteContent.trim()}
+                >
+                  {pasting ? '生成中…' : '粘贴生成素材'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
         <div className="hero-card">

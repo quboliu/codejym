@@ -48,6 +48,13 @@ export function uploadAsset(file: File) {
   });
 }
 
+export function uploadPastedAsset(filename: string, content: string) {
+  return request<Asset>('/api/assets/paste', {
+    method: 'POST',
+    body: JSON.stringify({ filename, content }),
+  });
+}
+
 export function fetchFileTree(assetId: string) {
   return request<FileNode[]>(`/api/assets/${assetId}/tree`);
 }

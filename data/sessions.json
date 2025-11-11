@@ -19,6 +19,26 @@
     "createdAt": "2025-11-07T12:30:24.1467Z",
     "updatedAt": "2025-11-08T04:55:59.709253Z"
   },
+  "67daa930ff25525d921b": {
+    "id": "67daa930ff25525d921b",
+    "assetId": "4124768dcb68fe1ff05b",
+    "relPath": "fuck.sh",
+    "cursor": 0,
+    "errors": 0,
+    "durationSeconds": 0,
+    "createdAt": "2025-11-11T18:56:23.680113Z",
+    "updatedAt": "2025-11-11T18:56:23.680113Z"
+  },
+  "ccf8ca9e575e8af33f01": {
+    "id": "ccf8ca9e575e8af33f01",
+    "assetId": "139c2eecd261e91097c1",
+    "relPath": "test.go",
+    "cursor": 0,
+    "errors": 0,
+    "durationSeconds": 0,
+    "createdAt": "2025-11-11T18:48:38.347207Z",
+    "updatedAt": "2025-11-11T18:48:38.347207Z"
+  },
   "d0bbf7e7d766d59c5a5b": {
     "id": "d0bbf7e7d766d59c5a5b",
     "assetId": "a0b469563b68af7ef8f6",

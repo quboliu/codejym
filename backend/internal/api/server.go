@@ -36,6 +36,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/assets/upload", s.handleAssetUpload)
+	mux.HandleFunc("/api/assets/paste", s.handleAssetPaste)
 	mux.HandleFunc("/api/assets", s.handleAssets)
 	mux.HandleFunc("/api/assets/", s.handleAssetByID)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
@@ -151,6 +152,64 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 		SizeBytes:  bytesTotal,
 		FileCount:  fileCount,
 		SourceName: header.Filename,
+	}
+	if err := s.store.RegisterAsset(asset); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist asset")
+		return
+	}
+	writeJSON(w, http.StatusCreated, toAssetDTO(asset))
+}
+
+func (s *Server) handleAssetPaste(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	var payload struct {
+		Filename string `json:"filename"`
+		Content  string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json payload")
+		return
+	}
+	content := payload.Content
+	if strings.TrimSpace(content) == "" {
+		writeError(w, http.StatusBadRequest, "content cannot be empty")
+		return
+	}
+	filename := sanitizeFilename(payload.Filename)
+	if filename == "" {
+		filename = "pasted-snippet.txt"
+	}
+	data := []byte(content)
+
+	assetID, err := storage.RandomID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to allocate id")
+		return
+	}
+	assetDir := s.store.AssetDir(assetID)
+	if err := os.MkdirAll(assetDir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to prepare storage")
+		return
+	}
+	dstPath := filepath.Join(assetDir, filename)
+	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to store file")
+		return
+	}
+	asset := &storage.Asset{
+		ID:         assetID,
+		Name:       deriveAssetNameFromFilename(filename),
+		RootPath:   assetDir,
+		SizeBytes:  int64(len(data)),
+		FileCount:  1,
+		SourceName: filename,
 	}
 	if err := s.store.RegisterAsset(asset); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist asset")
@@ -554,8 +613,7 @@ func writeReaderToFile(r io.Reader, dstPath string) error {
 	return err
 }
 
-func deriveAssetName(header *multipart.FileHeader) string {
-	name := header.Filename
+func deriveAssetNameFromFilename(name string) string {
 	if idx := strings.LastIndex(name, "."); idx > 0 {
 		name = name[:idx]
 	}
@@ -564,6 +622,10 @@ func deriveAssetName(header *multipart.FileHeader) string {
 		return "code-copy-asset"
 	}
 	return name
+}
+
+func deriveAssetName(header *multipart.FileHeader) string {
+	return deriveAssetNameFromFilename(header.Filename)
 }
 
 func buildTree(root string, rel string) ([]fileNode, error) {
@@ -651,6 +713,24 @@ func detectLanguage(rel string) string {
 		return "swift"
 	case ".kt":
 		return "kotlin"
+	case ".sh":
+		return "shell"
+	case ".bash":
+		return "shell"
+	case ".yaml":
+		return "yaml"
+	case ".yml":
+		return "yaml"
+	case ".json":
+		return "json"
+	case ".md":
+		return "markdown"
+	case ".txt":
+		return "text"
+	case ".toml":
+		return "toml"
+	case ".cfg", ".conf":
+		return "config"
 	default:
 		return "text"
 	}

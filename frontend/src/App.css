@@ -35,6 +35,56 @@
   flex-wrap: wrap;
 }
 
+.paste-upload {
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.paste-upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.paste-upload-form input,
+.paste-upload-form textarea {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 0.65rem 0.85rem;
+  background: rgba(248, 250, 252, 0.12);
+  color: #f8fafc;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.paste-upload-form textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.paste-upload-form input::placeholder,
+.paste-upload-form textarea::placeholder {
+  color: rgba(248, 250, 252, 0.6);
+}
+
+.paste-upload-form input:disabled,
+.paste-upload-form textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.paste-upload-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.25em;
@@ -403,6 +453,24 @@
   transition: border 0.2s, transform 0.2s;
 }
 
+.asset-name {
+  font-weight: 600;
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: #0f172a;
+}
+
+.asset-ext {
+  font-size: 0.8rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #3730a3;
+  text-transform: lowercase;
+}
+
 .asset-card.active {
   border-color: #6366f1;
   background: #eef2ff;
@@ -418,6 +486,12 @@
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 15px 30px rgba(99, 102, 241, 0.35);
+}
+
+.primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .file-tree {
