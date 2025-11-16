@@ -3,11 +3,12 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 COPY frontend/tsconfig*.json ./
 COPY frontend/vite.config.ts ./
+COPY frontend/index.html ./
 COPY frontend/public ./public
 COPY frontend/src ./src
 RUN npm install && npm run build
 
-FROM golang:1.22-alpine AS backend-build
+FROM golang:1.24-alpine AS backend-build
 WORKDIR /app/backend
 COPY backend/go.mod ./
 COPY backend/go.sum ./
@@ -17,7 +18,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
 
 FROM alpine:3.19
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app -u 1001
 COPY --from=backend-build /app/server /app/server
 COPY --from=frontend-build /app/frontend/dist /app/frontend
 RUN mkdir -p /data && chown -R app:app /data /app

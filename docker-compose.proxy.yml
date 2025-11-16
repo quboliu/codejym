@@ -1,0 +1,87 @@
+# 带有反向代理的 Docker Compose 配置 - jiezispace.com
+# 用于域名访问
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: codecopy
+      POSTGRES_PASSWORD: codecopy123
+      POSTGRES_DB: codecopybook
+      POSTGRES_PORT: 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"  # 改为5433端口避免冲突
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codecopy -d codecopybook || pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 应用服务
+  codecopybook:
+    build: .
+    image: codecopybook:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"  # 绑定到所有接口，Nginx 可以访问
+    environment:
+      - DATA_DIR=/data
+      - FRONTEND_DIR=/app/frontend
+      - DATABASE_URL=postgres://codecopy:codecopy123@postgres:5432/codecopybook?sslmode=disable
+      - AUTH_SECRET=your-secret-key-change-in-production
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+    restart: unless-stopped
+
+  # Nginx 反向代理（用于域名访问）
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro  # SSL 证书目录（可选）
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - codecopybook
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 或使用 Caddy 反向代理（更简单，自动 HTTPS）
+  # 取消下面的注释并注释掉上面的 nginx 来使用 Caddy
+  #
+  # caddy:
+  #   image: caddy:alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     - codecopybook
+
+volumes:
+  pgdata:
+  nginx_logs:
+  # caddy_data:
+  # caddy_config:
+
+networks:
+  default:
+    name: codejym_network
