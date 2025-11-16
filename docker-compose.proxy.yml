@@ -55,7 +55,7 @@ services:
     depends_on:
       - codecopybook
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://codecopybook:8080 >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
