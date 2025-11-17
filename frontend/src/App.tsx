@@ -51,6 +51,24 @@ function App() {
   const [view, setView] = useState<View>('dashboard');
   const errorTimer = useRef<number | null>(null);
 
+  // 使用 useRef 存储最新状态，避免频繁重新创建 interval
+  const cursorRef = useRef(cursor);
+  const errorsRef = useRef(errors);
+  const elapsedSecondsRef = useRef(elapsedSeconds);
+
+  // 同步状态到 ref
+  useEffect(() => {
+    cursorRef.current = cursor;
+  }, [cursor]);
+
+  useEffect(() => {
+    errorsRef.current = errors;
+  }, [errors]);
+
+  useEffect(() => {
+    elapsedSecondsRef.current = elapsedSeconds;
+  }, [elapsedSeconds]);
+
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_TOKEN_KEY);
     if (!stored) {
@@ -98,15 +116,16 @@ function App() {
     if (!session) {
       return;
     }
-    const timeout = window.setTimeout(() => {
+    // 使用 setInterval 每 1.2 秒保存一次进度
+    const interval = window.setInterval(() => {
       patchSession(session.id, {
-        cursor,
-        errors,
-        durationSeconds: Math.round(elapsedSeconds),
+        cursor: cursorRef.current,
+        errors: errorsRef.current,
+        durationSeconds: Math.round(elapsedSecondsRef.current),
       }).catch((err) => console.warn('session sync failed', err));
     }, 1200);
-    return () => window.clearTimeout(timeout);
-  }, [session?.id, cursor, errors, elapsedSeconds]);
+    return () => window.clearInterval(interval);
+  }, [session?.id]); // 只依赖 session，避免频繁重建
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
