@@ -35,6 +35,10 @@ services:
       - FRONTEND_DIR=/app/frontend
       - DATABASE_URL=postgres://codecopy:codecopy123@postgres:5432/codecopybook?sslmode=disable
       - AUTH_SECRET=your-secret-key-change-in-production
+      # Token 超时时间配置（可选）
+      # 格式：30m(30分钟), 24h(24小时), 7d(7天)
+      # 未配置时默认为 24 小时
+      - AUTH_TOKEN_TTL=24h
     volumes:
       - type: bind
         source: ./data

@@ -350,6 +350,26 @@ function App() {
     setCursor(nextCursor);
   }
 
+  async function resetProgress() {
+    if (!session || !fileContent) return;
+    if (!window.confirm('确定要重置当前文档的进度吗？此操作不可撤销。')) {
+      return;
+    }
+    setCursor(0);
+    setErrors(0);
+    setElapsedSeconds(0);
+    try {
+      await patchSession(session.id, {
+        cursor: 0,
+        errors: 0,
+        durationSeconds: 0,
+      });
+      setMessage('进度已重置');
+    } catch (err) {
+      setMessage((err as Error).message);
+    }
+  }
+
   if (!user) {
     return (
       <div className="auth-page">
@@ -442,9 +462,14 @@ function App() {
           <div className="practice-focus">
             <div className="practice-toolbar">
               <p className="toolbar-hint">光标实时标记当前位置，如需跳过整行可使用该按钮。</p>
-              <button className="skip-line-button" onClick={skipCurrentLine} disabled={!canSkipLine}>
-                跳过当前行
-              </button>
+              <div className="toolbar-actions">
+                <button className="skip-line-button" onClick={skipCurrentLine} disabled={!canSkipLine}>
+                  跳过当前行
+                </button>
+                <button className="reset-progress-button" onClick={resetProgress} disabled={!session}>
+                  重置进度
+                </button>
+              </div>
             </div>
             <div className="practice-progress">
               <div className="progress-thumb" style={{ width: `${progress}%` }} />

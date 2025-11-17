@@ -402,6 +402,11 @@
   font-size: 0.85rem;
 }
 
+.toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .skip-line-button {
   border: none;
   background: rgba(99, 102, 241, 0.15);
@@ -419,6 +424,27 @@
 }
 
 .skip-line-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reset-progress-button {
+  border: none;
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.reset-progress-button:not(:disabled):hover {
+  background: rgba(239, 68, 68, 0.25);
+  transform: translateY(-1px);
+}
+
+.reset-progress-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
