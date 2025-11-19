@@ -208,6 +208,24 @@ func (s *Storage) DeleteAsset(ctx context.Context, userID, assetID string) error
 	return nil
 }
 
+func (s *Storage) UpdateAsset(ctx context.Context, asset *Asset) error {
+	err := s.db.QueryRow(
+		ctx,
+		`UPDATE assets
+		 SET name = $1, updated_at = now()
+		 WHERE id = $2 AND user_id = $3
+		 RETURNING updated_at`,
+		asset.Name, asset.ID, asset.UserID,
+	).Scan(&asset.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *Storage) CreateSession(ctx context.Context, session *Session) error {
 	return s.db.QueryRow(
 		ctx,

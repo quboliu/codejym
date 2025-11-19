@@ -8,13 +8,14 @@
       }"
       :style="{ paddingLeft: `${depth * 16 + 8}px` }"
       @click="handleClick"
+      @contextmenu.prevent="handleContextMenu"
     >
       <!-- 文件夹图标 -->
       <svg
         v-if="node.isDir"
         class="tree-icon"
-        width="16"
-        height="16"
+        width="14"
+        height="14"
         viewBox="0 0 20 20"
         fill="none"
         stroke="currentColor"
@@ -28,8 +29,8 @@
       <svg
         v-else
         class="tree-icon"
-        width="16"
-        height="16"
+        width="14"
+        height="14"
         viewBox="0 0 20 20"
         fill="none"
         stroke="currentColor"
@@ -51,6 +52,7 @@
         :active-path="activePath"
         :depth="depth + 1"
         @select="$emit('select', $event)"
+        @context-menu="$emit('context-menu', $event)"
       />
     </div>
   </div>
@@ -68,6 +70,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [path: string]
+  'context-menu': [event: { node: FileNode; clientX: number; clientY: number }]
 }>()
 
 const isExpanded = ref(props.depth === 0) // 第一层默认展开
@@ -79,14 +82,22 @@ function handleClick() {
     emit('select', props.node.path)
   }
 }
+
+function handleContextMenu(event: MouseEvent) {
+  emit('context-menu', {
+    node: props.node,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  })
+}
 </script>
 
 <style scoped>
 .tree-item {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
+  gap: 6px;
+  padding: 4px var(--space-sm);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);

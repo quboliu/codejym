@@ -47,6 +47,13 @@ export function listAssets() {
   return request<Asset[]>('/api/assets');
 }
 
+export function createAsset(name: string) {
+  return request<Asset>('/api/assets', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function signup(email: string, password: string, name: string) {
   return request<AuthResponse>('/api/auth/signup', {
     method: 'POST',
@@ -75,8 +82,25 @@ export function uploadAsset(file: File) {
   });
 }
 
+export function uploadFileToAsset(assetId: string, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<Asset>(`/api/assets/${assetId}/upload`, {
+    method: 'POST',
+    body: formData,
+    headers: {}, // let browser set boundary
+  });
+}
+
 export function uploadPastedAsset(filename: string, content: string) {
   return request<Asset>('/api/assets/paste', {
+    method: 'POST',
+    body: JSON.stringify({ filename, content }),
+  });
+}
+
+export function uploadPasteToAsset(assetId: string, filename: string, content: string) {
+  return request<Asset>(`/api/assets/${assetId}/paste`, {
     method: 'POST',
     body: JSON.stringify({ filename, content }),
   });
@@ -93,6 +117,41 @@ export function fetchFileContent(assetId: string, filePath: string) {
 
 export function deleteAsset(assetId: string) {
   return request<void>(`/api/assets/${assetId}`, { method: 'DELETE' });
+}
+
+export function renameAsset(assetId: string, name: string) {
+  return request<Asset>(`/api/assets/${assetId}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function createDirectory(assetId: string, path: string) {
+  return request<{ message: string }>(`/api/assets/${assetId}/mkdir`, {
+    method: 'POST',
+    body: JSON.stringify({ path }),
+  });
+}
+
+export function moveFile(assetId: string, from: string, to: string) {
+  return request<{ message: string }>(`/api/assets/${assetId}/move-file`, {
+    method: 'POST',
+    body: JSON.stringify({ from, to }),
+  });
+}
+
+export function renameFile(assetId: string, path: string, newName: string) {
+  return request<{ message: string }>(`/api/assets/${assetId}/rename-file`, {
+    method: 'POST',
+    body: JSON.stringify({ path, newName }),
+  });
+}
+
+export function deleteFile(assetId: string, path: string) {
+  const encoded = encodeURIComponent(path);
+  return request<void>(`/api/assets/${assetId}/delete-file?path=${encoded}`, {
+    method: 'DELETE'
+  });
 }
 
 export function createSession(assetId: string, filePath: string) {

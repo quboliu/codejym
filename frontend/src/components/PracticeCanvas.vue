@@ -11,35 +11,132 @@
       </div>
     </div>
 
-    <!-- 代码显示区域 -->
+    <!-- 代码显示区域 - 单层渲染 -->
     <div class="code-display">
-      <pre class="code-base" aria-hidden="true">{{ content.content }}</pre>
-      <pre class="code-overlay"><span class="text-completed">{{ completed }}</span><span class="cursor-line"></span><span class="text-remaining">{{ remaining }}</span></pre>
+      <!-- 背景参考层 -->
+      <pre class="code-base hljs" :style="{ opacity: bgOpacity }" v-html="highlightedCode"></pre>
+      <!-- 前景进度层 -->
+      <pre class="code-foreground hljs" v-html="displayContent"></pre>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github-dark.css'
 import type { FileContent } from '../types'
 
 const props = defineProps<{
   content: FileContent
   cursor: number
   errorFlash: boolean
+  backgroundOpacity?: number
 }>()
-
-const completed = computed(() => {
-  return props.content.content.slice(0, props.cursor)
-})
 
 const currentChar = computed(() => {
   if (props.cursor >= props.content.content.length) return ''
   return props.content.content.slice(props.cursor, props.cursor + 1)
 })
 
-const remaining = computed(() => {
-  return props.content.content.slice(props.cursor)
+const bgOpacity = computed(() => {
+  return props.backgroundOpacity ?? 0.5
+})
+
+// 背景层：完整的语法高亮代码
+const highlightedCode = computed(() => {
+  const language = props.content.language || 'plaintext'
+  try {
+    const result = hljs.highlight(props.content.content, { language, ignoreIllegals: true })
+    return result.value
+  } catch {
+    return hljs.highlight(props.content.content, { language: 'plaintext' }).value
+  }
+})
+
+// 前景层：在语法高亮的HTML中插入光标和标记completed/remaining
+const displayContent = computed(() => {
+  const language = props.content.language || 'plaintext'
+  let highlighted = ''
+  try {
+    const result = hljs.highlight(props.content.content, { language, ignoreIllegals: true })
+    highlighted = result.value
+  } catch {
+    highlighted = hljs.highlight(props.content.content, { language: 'plaintext' }).value
+  }
+
+  // 创建临时DOM来解析HTML
+  const temp = document.createElement('div')
+  temp.innerHTML = highlighted
+
+  // 遍历所有文本节点，标记completed/remaining并插入光标
+  let charCount = 0
+  let cursorInserted = false
+
+  function processNode(node: Node): void {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent || ''
+      const nodeStart = charCount
+      const nodeEnd = charCount + text.length
+
+      if (nodeEnd <= props.cursor) {
+        // 整个节点都是已完成
+        const span = document.createElement('span')
+        span.className = 'code-completed'
+        span.textContent = text
+        node.parentNode!.replaceChild(span, node)
+      } else if (nodeStart >= props.cursor) {
+        // 整个节点都是未完成
+        const span = document.createElement('span')
+        span.className = 'code-remaining'
+        span.textContent = text
+        node.parentNode!.replaceChild(span, node)
+      } else if (!cursorInserted) {
+        // 光标在这个节点中间
+        const offset = props.cursor - nodeStart
+        const before = text.slice(0, offset)
+        const after = text.slice(offset)
+
+        const parent = node.parentNode!
+
+        // 创建新节点
+        const completedSpan = document.createElement('span')
+        completedSpan.className = 'code-completed'
+        completedSpan.textContent = before
+
+        const cursorSpan = document.createElement('span')
+        cursorSpan.className = 'cursor-line'
+
+        const remainingSpan = document.createElement('span')
+        remainingSpan.className = 'code-remaining'
+        remainingSpan.textContent = after
+
+        // 替换原节点
+        parent.replaceChild(remainingSpan, node)
+        parent.insertBefore(cursorSpan, remainingSpan)
+        parent.insertBefore(completedSpan, cursorSpan)
+
+        cursorInserted = true
+      }
+
+      charCount += text.length
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      // 递归处理子节点 - 需要先复制子节点列表，因为会修改DOM
+      const children = Array.from(node.childNodes)
+      children.forEach(child => processNode(child))
+    }
+  }
+
+  processNode(temp)
+
+  // 如果还没插入光标（cursor在末尾），在最后添加
+  if (!cursorInserted) {
+    const cursorSpan = document.createElement('span')
+    cursorSpan.className = 'cursor-line'
+    temp.appendChild(cursorSpan)
+  }
+
+  return temp.innerHTML
 })
 
 function displayChar(char: string) {
@@ -145,7 +242,7 @@ function displayChar(char: string) {
 }
 
 .code-base,
-.code-overlay {
+.code-foreground {
   grid-area: 1 / 1 / 2 / 2;
   margin: 0;
   padding: var(--space-lg);
@@ -162,26 +259,42 @@ function displayChar(char: string) {
   text-rendering: optimizeLegibility;
 }
 
-/* 基础层 - 参考文本 */
+/* 背景层 - 参考文本 */
 .code-base {
-  color: var(--color-text-tertiary);
-  opacity: 0.3;
+  /* opacity 通过行内样式动态设置 */
 }
 
-/* 覆盖层 - 用户进度 */
-.code-overlay {
-  color: var(--color-text-primary);
+.code-base.hljs {
+  background: transparent !important;
+  color: var(--color-text-tertiary) !important;
+}
+
+.code-base :deep(*) {
+  opacity: inherit;
+}
+
+/* 前景层 - 用户进度 */
+.code-foreground {
   pointer-events: none;
   z-index: 1;
 }
 
-/* 已完成文本 */
-.text-completed {
+.code-foreground.hljs {
+  background: transparent !important;
+}
+
+/* 已完成的代码 - 正常显示 */
+.code-foreground :deep(.code-completed) {
   color: var(--color-text-primary);
 }
 
-/* 光标线 - 作为独立元素，不影响布局 */
-.cursor-line {
+/* 未完成的代码 - 隐藏 */
+.code-foreground :deep(.code-remaining) {
+  visibility: hidden;
+}
+
+/* 光标 */
+.code-foreground :deep(.cursor-line) {
   display: inline-block;
   width: 0;
   height: 1em;
@@ -198,11 +311,6 @@ function displayChar(char: string) {
   50%, 100% { opacity: 0; }
 }
 
-/* 剩余文本 - 隐藏但占位 */
-.text-remaining {
-  visibility: hidden;
-}
-
 /* 响应式 */
 @media (max-width: 768px) {
   .canvas-header {
@@ -210,7 +318,7 @@ function displayChar(char: string) {
   }
 
   .code-base,
-  .code-overlay {
+  .code-foreground {
     padding: var(--space-md);
     font-size: 13px;
     line-height: 1.6;
