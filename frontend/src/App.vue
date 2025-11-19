@@ -978,15 +978,10 @@ async function handleSelectFile(path: string) {
     elapsedSeconds.value = sessionData.durationSeconds ?? 0
     fileContent.value = content
 
-    // 设置cursor
-    // 对于新文件（cursor = 0）从文档开头开始，让用户看到完整内容
-    // 只有恢复已有进度时（cursor > 0）才需要确保光标不在注释中间
+    // 设置cursor - 总是跳到第一个需要输入的字符
+    // 直接传递 content 避免响应式时序问题
     const initialCursor = Math.min(sessionData.cursor ?? 0, content.content.length)
-    if (initialCursor === 0) {
-      cursor.value = 0
-    } else {
-      cursor.value = findNextNonCommentPosition(initialCursor)
-    }
+    cursor.value = findNextNonCommentPositionDirect(initialCursor, content)
   } catch (err) {
     toast.error((err as Error).message)
   }
@@ -1090,10 +1085,28 @@ function isInCommentRange(pos: number): boolean {
   return false
 }
 
+// 直接检查位置是否在注释范围内（不依赖响应式状态）
+function isInCommentRangeDirect(pos: number, content: FileContent): boolean {
+  for (const range of content.skipRanges) {
+    if (pos >= range.start && pos < range.end) {
+      return true
+    }
+  }
+  return false
+}
+
 // 找到下一个非注释位置
 function findNextNonCommentPosition(pos: number): number {
   if (!fileContent.value) return pos
   while (pos < fileContent.value.content.length && isInCommentRange(pos)) {
+    pos++
+  }
+  return pos
+}
+
+// 直接找到下一个非注释位置（不依赖响应式状态）
+function findNextNonCommentPositionDirect(pos: number, content: FileContent): number {
+  while (pos < content.content.length && isInCommentRangeDirect(pos, content)) {
     pos++
   }
   return pos
