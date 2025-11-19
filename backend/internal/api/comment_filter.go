@@ -5,6 +5,39 @@ import (
 	"strings"
 )
 
+// FindCommentRanges 根据语言类型找出注释的位置范围（不删除注释）
+func FindCommentRanges(content string, language string) []skipRange {
+	switch strings.ToLower(language) {
+	case "go", "golang":
+		return findGoCommentRanges(content)
+	case "javascript", "js", "typescript", "ts", "jsx", "tsx":
+		return findJavaScriptCommentRanges(content)
+	case "python", "py":
+		return findPythonCommentRanges(content)
+	case "java":
+		return findJavaCommentRanges(content)
+	case "c", "cpp", "c++", "cc", "cxx":
+		return findCCommentRanges(content)
+	case "rust", "rs":
+		return findRustCommentRanges(content)
+	case "ruby", "rb":
+		return findRubyCommentRanges(content)
+	case "shell", "bash", "sh":
+		return findShellCommentRanges(content)
+	case "sql":
+		return findSQLCommentRanges(content)
+	case "php":
+		return findPHPCommentRanges(content)
+	case "swift":
+		return findSwiftCommentRanges(content)
+	case "kotlin", "kt":
+		return findKotlinCommentRanges(content)
+	default:
+		// 对于不支持的语言，返回空数组（无注释跳过）
+		return []skipRange{}
+	}
+}
+
 // CommentFilter 根据语言类型过滤注释
 func CommentFilter(content string, language string) string {
 	switch strings.ToLower(language) {
@@ -194,4 +227,193 @@ func removeSingleLineComments(content string, commentPrefix string) string {
 	}
 
 	return strings.Join(result, "\n")
+}
+
+// ==================== 查找注释范围的函数 ====================
+
+// findMultiLineCommentRanges 查找多行注释的范围
+func findMultiLineCommentRanges(content string, startPattern string, endPattern string) []skipRange {
+	pattern := startPattern + `[\s\S]*?` + endPattern
+	re := regexp.MustCompile(pattern)
+	matches := re.FindAllStringIndex(content, -1)
+	
+	ranges := make([]skipRange, 0, len(matches))
+	for _, match := range matches {
+		ranges = append(ranges, skipRange{
+			Start: match[0],
+			End:   match[1],
+		})
+	}
+	return ranges
+}
+
+// findSingleLineCommentRanges 查找单行注释的范围
+func findSingleLineCommentRanges(content string, commentPrefix string) []skipRange {
+	ranges := []skipRange{}
+	lines := strings.Split(content, "\n")
+	pos := 0
+	
+	for i, line := range lines {
+		commentIdx := strings.Index(line, commentPrefix)
+		if commentIdx >= 0 {
+			// 找到注释，从注释开始到行尾都是注释
+			start := pos + commentIdx
+			end := pos + len(line)
+			ranges = append(ranges, skipRange{
+				Start: start,
+				End:   end,
+			})
+		}
+		// 移动到下一行（+1 是换行符）
+		pos += len(line)
+		if i < len(lines)-1 {
+			pos += 1 // 换行符
+		}
+	}
+	return ranges
+}
+
+// mergeRanges 合并重叠的范围并排序
+func mergeRanges(ranges []skipRange) []skipRange {
+	if len(ranges) == 0 {
+		return ranges
+	}
+	
+	// 按start排序
+	for i := 0; i < len(ranges); i++ {
+		for j := i + 1; j < len(ranges); j++ {
+			if ranges[i].Start > ranges[j].Start {
+				ranges[i], ranges[j] = ranges[j], ranges[i]
+			}
+		}
+	}
+	
+	// 合并重叠范围
+	merged := []skipRange{ranges[0]}
+	for i := 1; i < len(ranges); i++ {
+		last := &merged[len(merged)-1]
+		current := ranges[i]
+		
+		if current.Start <= last.End {
+			// 重叠，合并
+			if current.End > last.End {
+				last.End = current.End
+			}
+		} else {
+			// 不重叠，添加新范围
+			merged = append(merged, current)
+		}
+	}
+	
+	return merged
+}
+
+// findGoCommentRanges 查找 Go 语言注释
+func findGoCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findJavaScriptCommentRanges 查找 JavaScript/TypeScript 注释
+func findJavaScriptCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findPythonCommentRanges 查找 Python 注释
+func findPythonCommentRanges(content string) []skipRange {
+	multiLine1 := findMultiLineCommentRanges(content, `"""`, `"""`)
+	multiLine2 := findMultiLineCommentRanges(content, `'''`, `'''`)
+	singleLine := findSingleLineCommentRanges(content, "#")
+	return mergeRanges(append(append(multiLine1, multiLine2...), singleLine...))
+}
+
+// findJavaCommentRanges 查找 Java 注释
+func findJavaCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*\*?`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findCCommentRanges 查找 C/C++ 注释
+func findCCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findRustCommentRanges 查找 Rust 注释
+func findRustCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findRubyCommentRanges 查找 Ruby 注释
+func findRubyCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `^=begin`, `^=end`)
+	singleLine := findSingleLineCommentRanges(content, "#")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findShellCommentRanges 查找 Shell 脚本注释
+func findShellCommentRanges(content string) []skipRange {
+	ranges := []skipRange{}
+	lines := strings.Split(content, "\n")
+	pos := 0
+	
+	for i, line := range lines {
+		// 保留第一行的 shebang
+		if i == 0 && strings.HasPrefix(strings.TrimSpace(line), "#!") {
+			pos += len(line) + 1
+			continue
+		}
+		
+		commentIdx := strings.Index(line, "#")
+		if commentIdx >= 0 {
+			start := pos + commentIdx
+			end := pos + len(line)
+			ranges = append(ranges, skipRange{
+				Start: start,
+				End:   end,
+			})
+		}
+		
+		pos += len(line)
+		if i < len(lines)-1 {
+			pos += 1
+		}
+	}
+	return ranges
+}
+
+// findSQLCommentRanges 查找 SQL 注释
+func findSQLCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "--")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findPHPCommentRanges 查找 PHP 注释
+func findPHPCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine1 := findSingleLineCommentRanges(content, "//")
+	singleLine2 := findSingleLineCommentRanges(content, "#")
+	return mergeRanges(append(append(multiLine, singleLine1...), singleLine2...))
+}
+
+// findSwiftCommentRanges 查找 Swift 注释
+func findSwiftCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
+}
+
+// findKotlinCommentRanges 查找 Kotlin 注释
+func findKotlinCommentRanges(content string) []skipRange {
+	multiLine := findMultiLineCommentRanges(content, `\/\*`, `\*\/`)
+	singleLine := findSingleLineCommentRanges(content, "//")
+	return mergeRanges(append(multiLine, singleLine...))
 }

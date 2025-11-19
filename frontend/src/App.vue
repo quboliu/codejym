@@ -974,10 +974,13 @@ async function handleSelectFile(path: string) {
     const sessionData = await ensureSession(selectedAsset.value, path)
 
     session.value = sessionData
-    cursor.value = Math.min(sessionData.cursor ?? 0, content.content.length)
     errors.value = sessionData.errors ?? 0
     elapsedSeconds.value = sessionData.durationSeconds ?? 0
     fileContent.value = content
+
+    // 设置cursor，确保跳过注释
+    const initialCursor = Math.min(sessionData.cursor ?? 0, content.content.length)
+    cursor.value = findNextNonCommentPosition(initialCursor)
   } catch (err) {
     toast.error((err as Error).message)
   }
@@ -1042,7 +1045,9 @@ function handleKeydown(event: KeyboardEvent) {
 
   if (event.key === 'Backspace') {
     event.preventDefault()
-    cursor.value = Math.max(0, cursor.value - 1)
+    // 向后移动光标，跳过注释
+    const newCursor = findPrevNonCommentPosition(cursor.value - 1)
+    cursor.value = Math.max(0, newCursor)
     return
   }
 
@@ -1055,7 +1060,9 @@ function handleKeydown(event: KeyboardEvent) {
   const expected = fileContent.value.content.charAt(cursor.value)
 
   if (expected === char) {
-    cursor.value = Math.min(fileContent.value.content.length, cursor.value + 1)
+    // 匹配成功，向前移动光标，跳过注释
+    const newCursor = findNextNonCommentPosition(cursor.value + 1)
+    cursor.value = Math.min(fileContent.value.content.length, newCursor)
   } else {
     errors.value += 1
     flashError.value = true
@@ -1063,6 +1070,35 @@ function handleKeydown(event: KeyboardEvent) {
       flashError.value = false
     }, 200)
   }
+}
+
+// 检查位置是否在注释范围内
+function isInCommentRange(pos: number): boolean {
+  if (!fileContent.value) return false
+  for (const range of fileContent.value.skipRanges) {
+    if (pos >= range.start && pos < range.end) {
+      return true
+    }
+  }
+  return false
+}
+
+// 找到下一个非注释位置
+function findNextNonCommentPosition(pos: number): number {
+  if (!fileContent.value) return pos
+  while (pos < fileContent.value.content.length && isInCommentRange(pos)) {
+    pos++
+  }
+  return pos
+}
+
+// 找到前一个非注释位置
+function findPrevNonCommentPosition(pos: number): number {
+  if (!fileContent.value) return pos
+  while (pos >= 0 && isInCommentRange(pos)) {
+    pos--
+  }
+  return Math.max(0, pos)
 }
 
 function mapKeyToChar(event: KeyboardEvent): string | null {

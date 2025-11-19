@@ -69,9 +69,19 @@ const displayContent = computed(() => {
   const temp = document.createElement('div')
   temp.innerHTML = highlighted
 
-  // 遍历所有文本节点，标记completed/remaining并插入光标
+  // 遍历所有文本节点，标记completed/remaining/comment并插入光标
   let charCount = 0
   let cursorInserted = false
+
+  // 检查位置是否在注释范围内
+  function isInCommentRange(pos: number): boolean {
+    for (const range of props.content.skipRanges) {
+      if (pos >= range.start && pos < range.end) {
+        return true
+      }
+    }
+    return false
+  }
 
   function processNode(node: Node): void {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -88,7 +98,9 @@ const displayContent = computed(() => {
       } else if (nodeStart >= props.cursor) {
         // 整个节点都是未完成
         const span = document.createElement('span')
-        span.className = 'code-remaining'
+        // 检查是否在注释中
+        const inComment = isInCommentRange(nodeStart)
+        span.className = inComment ? 'code-comment' : 'code-remaining'
         span.textContent = text
         node.parentNode!.replaceChild(span, node)
       } else if (!cursorInserted) {
@@ -108,7 +120,9 @@ const displayContent = computed(() => {
         cursorSpan.className = 'cursor-line'
 
         const remainingSpan = document.createElement('span')
-        remainingSpan.className = 'code-remaining'
+        // 检查after部分是否在注释中
+        const inComment = isInCommentRange(props.cursor)
+        remainingSpan.className = inComment ? 'code-comment' : 'code-remaining'
         remainingSpan.textContent = after
 
         // 替换原节点
@@ -291,6 +305,12 @@ function displayChar(char: string) {
 /* 未完成的代码 - 隐藏 */
 .code-foreground :deep(.code-remaining) {
   visibility: hidden;
+}
+
+/* 注释 - 显示但颜色更淡（不需要输入） */
+.code-foreground :deep(.code-comment) {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
 }
 
 /* 光标 */

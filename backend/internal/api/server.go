@@ -772,10 +772,16 @@ type fileNode struct {
 }
 
 type fileContent struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Language string `json:"language"`
-	Content  string `json:"content"`
+	Name       string      `json:"name"`
+	Path       string      `json:"path"`
+	Language   string      `json:"language"`
+	Content    string      `json:"content"`
+	SkipRanges []skipRange `json:"skipRanges"`
+}
+
+type skipRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 func toAssetDTO(a *storage.Asset) assetDTO {
@@ -1112,14 +1118,15 @@ func readAssetFile(root, rel string) (*fileContent, error) {
 	language := detectLanguage(cleanRel)
 	content := string(data)
 
-	// 自动过滤注释
-	filteredContent := CommentFilter(content, language)
+	// 查找注释范围（不删除注释，只标记位置）
+	skipRanges := FindCommentRanges(content, language)
 
 	return &fileContent{
-		Name:     filepath.Base(cleanRel),
-		Path:     filepath.ToSlash(cleanRel),
-		Language: language,
-		Content:  filteredContent,
+		Name:       filepath.Base(cleanRel),
+		Path:       filepath.ToSlash(cleanRel),
+		Language:   language,
+		Content:    content,
+		SkipRanges: skipRanges,
 	}, nil
 }
 
