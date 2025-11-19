@@ -14,11 +14,7 @@
     <!-- 代码显示区域 -->
     <div class="code-display">
       <pre class="code-base" aria-hidden="true">{{ content.content }}</pre>
-      <pre class="code-overlay">
-        <span class="text-completed">{{ completed }}</span>
-        <span class="text-cursor" :class="{ 'cursor-end': atEnd }">{{ atEnd ? '\u200b' : currentChar }}</span>
-        <span class="text-remaining">{{ remaining }}</span>
-      </pre>
+      <pre class="code-overlay"><span class="text-completed">{{ completed }}</span><span class="cursor-line"></span><span class="text-remaining">{{ remaining }}</span></pre>
     </div>
   </div>
 </template>
@@ -43,12 +39,7 @@ const currentChar = computed(() => {
 })
 
 const remaining = computed(() => {
-  if (props.cursor >= props.content.content.length) return ''
-  return props.content.content.slice(props.cursor + 1)
-})
-
-const atEnd = computed(() => {
-  return props.cursor >= props.content.content.length
+  return props.content.content.slice(props.cursor)
 })
 
 function displayChar(char: string) {
@@ -162,9 +153,13 @@ function displayChar(char: string) {
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: keep-all;
   tab-size: 2;
-  -webkit-font-smoothing: subpixel-antialiased;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* 基础层 - 参考文本 */
@@ -185,39 +180,19 @@ function displayChar(char: string) {
   color: var(--color-text-primary);
 }
 
-/* 光标 */
-.text-cursor {
-  position: relative;
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
-  border-radius: 2px;
-  padding: 0 1px;
-}
-
-.text-cursor::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--color-accent);
-  animation: blink 1s step-end infinite;
-}
-
-.cursor-end {
+/* 光标线 - 作为独立元素，不影响布局 */
+.cursor-line {
   display: inline-block;
-  width: 8px;
-  height: 1.4em;
-  vertical-align: text-bottom;
-  background: var(--color-accent);
-  margin-left: 1px;
+  width: 0;
+  height: 1em;
+  border-left: 2px solid var(--color-accent);
+  animation: blink 1s step-end infinite;
+  vertical-align: baseline;
+  margin: 0;
+  padding: 0;
 }
 
-.cursor-end::after {
-  display: none;
-}
-
+/* 闪烁动画 */
 @keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
@@ -238,6 +213,7 @@ function displayChar(char: string) {
   .code-overlay {
     padding: var(--space-md);
     font-size: 13px;
+    line-height: 1.6;
   }
 
   .code-display {
