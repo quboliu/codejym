@@ -445,189 +445,177 @@ function App() {
 
   if (view === 'practice') {
     return (
-      <div className="practice-page">
-        <header className="practice-topbar">
-          <div className="topbar-left">
-            <button className="ghost" onClick={exitPractice}>
-              ← 返回素材库
-            </button>
-            <div>
-              <p className="eyebrow">当前文件</p>
-              <h2>{selectedPath ?? '未选择文件'}</h2>
-              {fileContent && <p className="subtitle">语言：{fileContent.language.toUpperCase()}</p>}
-            </div>
-          </div>
-          <div className="topbar-stats">
-            <div>
-              <span>进度</span>
-              <strong>{progress}%</strong>
-            </div>
-            <div>
-              <span>准确率</span>
-              <strong>{accuracy}%</strong>
-            </div>
-            <div>
-              <span>用时</span>
-              <strong>{formatDuration(elapsedSeconds)}</strong>
-            </div>
-          </div>
-        </header>
+      <div className="app-layout">
         {message && (
           <div className="alert floating" onClick={() => setMessage(null)}>
             {message}
           </div>
         )}
-        <div className="practice-main">
-          <div className="practice-focus">
-            <div className="practice-toolbar">
-              <p className="toolbar-hint">光标实时标记当前位置，如需跳过整行可使用该按钮。</p>
-              <div className="toolbar-actions">
-                <button className="skip-line-button" onClick={skipCurrentLine} disabled={!canSkipLine}>
-                  跳过当前行
-                </button>
-                <button className="reset-progress-button" onClick={resetProgress} disabled={!session}>
-                  重置进度
-                </button>
+
+        {/* 左侧文档树区域 */}
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <div className="user-info">
+              <p className="eyebrow">当前用户</p>
+              <h4>{user.name}</h4>
+              <p className="user-email">{user.email}</p>
+            </div>
+            <div className="import-buttons">
+              <button className="back-button" onClick={exitPractice}>
+                ← 返回素材库
+              </button>
+            </div>
+          </div>
+
+          <div className="sidebar-content">
+            <div className="card">
+              <div className="card-header">
+                <h3>📚 素材库</h3>
+              </div>
+              <AssetList assets={assets} selectedId={selectedAsset} onSelect={handleSelectAsset} />
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h3>🗂️ 文件 / 模块</h3>
+              </div>
+              {selectedAsset ? (
+                <FileTree nodes={tree} activePath={selectedPath} onSelect={handleSelectFile} />
+              ) : (
+                <div className="empty-card">先选择一个素材查看文件结构。</div>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* 中间临摹区域 */}
+        <main className="practice-workspace">
+          <div className="practice-container">
+            {/* 固定的状态栏 */}
+            <header className="practice-status-bar">
+              <div className="status-left">
+                <h2>{selectedPath ?? '未选择文件'}</h2>
+                {fileContent && <p className="subtitle">语言：{fileContent.language.toUpperCase()}</p>}
+              </div>
+              <div className="status-right">
+                <div className="stat-item">
+                  <span>进度</span>
+                  <strong>{progress}%</strong>
+                </div>
+                <div className="stat-item">
+                  <span>准确率</span>
+                  <strong>{accuracy}%</strong>
+                </div>
+                <div className="stat-item">
+                  <span>用时</span>
+                  <strong>{formatDuration(elapsedSeconds)}</strong>
+                </div>
+                <div className="stat-item">
+                  <span>错误</span>
+                  <strong>{errors}</strong>
+                </div>
+              </div>
+            </header>
+
+            {/* 可滚动的临摹区域 */}
+            <div className="practice-scroll-area">
+              <div className="practice-focus">
+                <div className="practice-progress">
+                  <div className="progress-thumb" style={{ width: `${progress}%` }} />
+                </div>
+                <PracticeCanvas content={fileContent} cursor={cursor} errorFlash={flashError} />
               </div>
             </div>
-            <div className="practice-progress">
-              <div className="progress-thumb" style={{ width: `${progress}%` }} />
-            </div>
-            <PracticeCanvas content={fileContent} cursor={cursor} errorFlash={flashError} />
+
+            {/* 固定的功能栏 */}
+            <footer className="practice-action-bar">
+              <div className="action-bar-content">
+                <div className="action-left">
+                  <span className="action-hint">
+                    💡 提示：按 Backspace 可以回到上一个字符 | 估算速度：{computeWPM(cursor, elapsedSeconds)} WPM
+                  </span>
+                </div>
+                <div className="action-right">
+                  <button
+                    className="action-button skip"
+                    onClick={skipCurrentLine}
+                    disabled={!canSkipLine}
+                  >
+                    ⏭️ 跳过当前行
+                  </button>
+                  <button
+                    className="action-button reset"
+                    onClick={resetProgress}
+                    disabled={!session}
+                  >
+                    🔄 重置进度
+                  </button>
+                </div>
+              </div>
+            </footer>
           </div>
-          <aside className="practice-side">
-            <div className="side-card">
-              <h4>会话信息</h4>
-              <p>错误次数：{errors}</p>
-              <p>估算 WPM：{computeWPM(cursor, elapsedSeconds)}</p>
-              <p>Session ID：{session?.id}</p>
-            </div>
-            <div className="side-card">
-              <h4>提示</h4>
-              <ul>
-                <li>按 Backspace 可以回到上一个字符。</li>
-                <li>完成所有字符后自动保持 100% 进度。</li>
-                <li>每 1.2 秒自动同步进度，刷新不会丢失。</li>
-              </ul>
-            </div>
-          </aside>
-        </div>
-        <button
-          className="skip-line-fab"
-          onClick={skipCurrentLine}
-          disabled={!canSkipLine}
-          aria-label="跳过当前行"
-        >
-          跳过当前行
-        </button>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="page">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">代码临摹工作室</p>
-          <h1>挑选最爱的源码，逐字临摹</h1>
-          <p className="subtitle">上传文件或项目压缩包，选择文件后在右侧工作区跟随浅色字帖逐个字符键入。</p>
-          <div className="hero-actions">
-            <label className={`upload-button ${uploading || pasting ? 'loading' : ''}`}>
-              <input
-                type="file"
-                onChange={handleUpload}
-                accept=".zip,.go,.ts,.tsx,.js,.jsx,.py,.java,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.txt,.sh,.bash,.yaml,.yml,.json,.md,.toml,.conf,.cfg"
-              />
-              {uploading || pasting ? '上传中…' : '上传文件 / 压缩包'}
-            </label>
-            <button className="secondary" onClick={() => refreshAssets()} disabled={assetLoading}>
-              {assetLoading ? '同步中…' : '刷新素材'}
-            </button>
-            <button className="secondary logout" onClick={handleLogout}>
-              退出登录
-            </button>
-          </div>
-          <div className="user-pill">
-            <div>
-              <p className="eyebrow">当前用户</p>
-              <h4>{user.name}</h4>
-              <p className="user-email">{user.email}</p>
-            </div>
-          </div>
-          <div className="paste-upload">
-            <div>
-              <p className="eyebrow">快速粘贴</p>
-              <p className="subtitle">没有文件？直接输入文件名并粘贴文本，立即生成素材。</p>
-            </div>
-            <form className="paste-upload-form" onSubmit={handlePasteSubmit}>
-              <input
-                type="text"
-                placeholder="文件名（例如 script.sh）"
-                value={pasteFilename}
-                onChange={(e) => setPasteFilename(e.target.value)}
-                disabled={uploading || pasting}
-              />
-              <textarea
-                placeholder="在这里粘贴内容..."
-                value={pasteContent}
-                onChange={(e) => setPasteContent(e.target.value)}
-                disabled={uploading || pasting}
-              />
-              <div className="paste-upload-actions">
-                <button
-                  type="submit"
-                  className="primary"
-                  disabled={pasting || uploading || !pasteContent.trim()}
-                >
-                  {pasting ? '生成中…' : '粘贴生成素材'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-        <div className="hero-card">
-          <p>当前状态</p>
-          <h3>{fileContent ? selectedPath : '尚未选择文件'}</h3>
-          <ul>
-            <li>进度 <strong>{progress}%</strong></li>
-            <li>准确率 <strong>{accuracy}%</strong></li>
-            <li>用时 <strong>{formatDuration(elapsedSeconds)}</strong></li>
-          </ul>
-        </div>
-      </header>
-
+    <div className="app-layout">
       {message && (
         <div className="alert" onClick={() => setMessage(null)}>
           {message}
         </div>
       )}
 
-      <section className="stats-row">
-        <div className="stat-card">
-          <span>当前进度</span>
-          <strong>{progress}%</strong>
-          <div className="progress-track">
-            <div className="progress-thumb" style={{ width: `${progress}%` }} />
+      {/* 左侧文档树区域 */}
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <div className="user-info">
+            <p className="eyebrow">当前用户</p>
+            <h4>{user.name}</h4>
+            <p className="user-email">{user.email}</p>
+          </div>
+          <div className="import-buttons">
+            <label className={`import-button ${uploading || pasting ? 'loading' : ''}`}>
+              <input
+                type="file"
+                onChange={handleUpload}
+                accept=".zip,.go,.ts,.tsx,.js,.jsx,.py,.java,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.txt,.sh,.bash,.yaml,.yml,.json,.md,.toml,.conf,.cfg"
+              />
+              📁 导入文件 / 压缩包
+            </label>
+            <button
+              className="import-button secondary"
+              onClick={() => {
+                const filename = window.prompt('请输入文件名:', 'snippet.txt');
+                if (filename !== null) {
+                  setPasteFilename(filename);
+                  // 显示悬浮弹窗
+                  const content = window.prompt('请粘贴内容:');
+                  if (content !== null) {
+                    setPasteContent(content);
+                    handlePasteSubmit({ preventDefault: () => {} } as any);
+                  }
+                }
+              }}
+              disabled={uploading || pasting}
+            >
+              📋 粘贴导入
+            </button>
           </div>
         </div>
-        <div className="stat-card">
-          <span>准确率</span>
-          <strong>{accuracy}%</strong>
-          <p className="stat-detail">错误次数 {errors}</p>
-        </div>
-        <div className="stat-card">
-          <span>键入时间</span>
-          <strong>{formatDuration(elapsedSeconds)}</strong>
-          <p className="stat-detail">约 {computeWPM(cursor, elapsedSeconds)} WPM</p>
-        </div>
-      </section>
 
-      <div className="workspace">
-        <aside className="sidebar">
+        <div className="sidebar-content">
           <div className="card">
             <div className="card-header">
-              <h3>素材库</h3>
-              {assetLoading && <span className="spinner" />}
+              <h3>📚 素材库</h3>
+              <div className="header-actions">
+                {assetLoading && <span className="spinner" />}
+                <button className="refresh-button" onClick={() => refreshAssets()} disabled={assetLoading}>
+                  🔄
+                </button>
+                <button className="logout-button" onClick={handleLogout}>🚪</button>
+              </div>
             </div>
             <AssetList assets={assets} selectedId={selectedAsset} onSelect={handleSelectAsset} />
             <p className="muted tip">支持单文件或 ZIP，大小建议 &lt; 20MB。</p>
@@ -635,7 +623,7 @@ function App() {
 
           <div className="card">
             <div className="card-header">
-              <h3>文件 / 模块</h3>
+              <h3>🗂️ 文件 / 模块</h3>
               {treeLoading && <span className="spinner" />}
             </div>
             {selectedAsset ? (
@@ -644,35 +632,79 @@ function App() {
               <div className="empty-card">先选择一个素材查看文件结构。</div>
             )}
           </div>
-        </aside>
+        </div>
+      </aside>
 
-        <section className="practice-area placeholder">
-          <div className="practice-head">
-            <div>
-              <p className="eyebrow">临摹区域</p>
+      {/* 中间临摹区域 */}
+      <main className="practice-workspace">
+        <div className="practice-container">
+          {/* 固定的状态栏 */}
+          <header className="practice-status-bar">
+            <div className="status-left">
               <h2>{selectedPath ?? '等待选择文件'}</h2>
               {fileContent && <p className="subtitle">语言：{fileContent.language.toUpperCase()}</p>}
             </div>
-            <div className="session-meta">
-              <span>进度 {progress}%</span>
-              <span>准确率 {accuracy}%</span>
-              <span>时间 {formatDuration(elapsedSeconds)}</span>
-            </div>
-          </div>
-          <div className="practice-placeholder">
-            {selectedPath ? (
-              <div>
-                <p>准备就绪，点击下方按钮进入临摹页面。</p>
-                <button className="primary" onClick={() => setView('practice')} disabled={!fileContent}>
-                  进入临摹
+            <div className="status-right">
+              <div className="stat-item">
+                <span>进度</span>
+                <strong>{progress}%</strong>
+              </div>
+              <div className="stat-item">
+                <span>准确率</span>
+                <strong>{accuracy}%</strong>
+              </div>
+              <div className="stat-item">
+                <span>用时</span>
+                <strong>{formatDuration(elapsedSeconds)}</strong>
+              </div>
+              {selectedPath && (
+                <button className="start-practice-button" onClick={() => setView('practice')} disabled={!fileContent}>
+                  进入临摹 →
                 </button>
+              )}
+            </div>
+          </header>
+
+          {/* 可滚动的临摹区域 */}
+          <div className="practice-scroll-area">
+            {selectedPath ? (
+              <div className="practice-preview">
+                <p className="preview-text">准备就绪，点击上方"进入临摹"按钮开始练习。</p>
+                {fileContent && <p className="preview-info">文件大小：{fileContent.content.length} 字符</p>}
               </div>
             ) : (
-              <p>选择一个文件开始临摹。</p>
+              <div className="practice-placeholder">
+                <p>选择一个文件开始临摹。</p>
+              </div>
             )}
           </div>
-        </section>
-      </div>
+
+          {/* 固定的功能栏 */}
+          <footer className="practice-action-bar">
+            <div className="action-bar-content">
+              <div className="action-left">
+                <span className="action-hint">💡 提示：使用键盘输入进行临摹，按 Backspace 可回退</span>
+              </div>
+              <div className="action-right">
+                <button
+                  className="action-button skip"
+                  onClick={skipCurrentLine}
+                  disabled={!fileContent || !canSkipLine}
+                >
+                  ⏭️ 跳过当前行
+                </button>
+                <button
+                  className="action-button reset"
+                  onClick={resetProgress}
+                  disabled={!session}
+                >
+                  🔄 重置进度
+                </button>
+              </div>
+            </div>
+          </footer>
+        </div>
+      </main>
     </div>
   );
 }

@@ -1,9 +1,7 @@
-.page {
+.app-layout {
   min-height: 100vh;
-  padding: 2.5rem clamp(1.5rem, 4vw, 4rem) 3rem;
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  background: linear-gradient(135deg, #fdf4ff, #e0e7ff 60%);
 }
 
 .hero {
@@ -770,24 +768,381 @@
   }
 }
 
-@media (max-width: 700px) {
-  .page {
-    padding: 1.5rem;
+/* ========== 新的三段式布局样式 ========== */
+
+/* 左侧边栏 */
+.sidebar {
+  width: 380px;
+  min-width: 380px;
+  height: 100vh;
+  background: white;
+  border-right: 1px solid rgba(99, 102, 241, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 5px 0 20px rgba(15, 23, 42, 0.05);
+}
+
+.sidebar-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+  background: linear-gradient(135deg, #f8fafc, #eef2ff);
+}
+
+.user-info h4 {
+  margin: 0.15rem 0;
+  color: #1e293b;
+}
+
+.user-email {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.import-buttons {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.import-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(120deg, #6366f1, #8b5cf6);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.25);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.import-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 25px rgba(99, 102, 241, 0.35);
+}
+
+.import-button.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.import-button.secondary {
+  background: linear-gradient(120deg, #f59e0b, #f97316);
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.25);
+}
+
+.import-button.secondary:hover:not(:disabled) {
+  box-shadow: 0 12px 25px rgba(245, 158, 11, 0.35);
+}
+
+.import-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.back-button {
+  width: 100%;
+  border: none;
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.back-button:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.refresh-button,
+.logout-button {
+  border: none;
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.refresh-button:hover:not(:disabled),
+.logout-button:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.logout-button:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 右侧工作区 */
+.practice-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.practice-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* 固定的状态栏 */
+.practice-status-bar {
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, #1e293b, #312e81);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  box-shadow: 0 10px 30px rgba(49, 46, 129, 0.3);
+  flex-shrink: 0;
+}
+
+.status-left h2 {
+  margin: 0.2rem 0 0.4rem;
+  color: white;
+}
+
+.status-right {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.stat-item span {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.stat-item strong {
+  font-size: 1.6rem;
+  color: white;
+}
+
+.start-practice-button {
+  border: none;
+  background: rgba(99, 102, 241, 0.25);
+  color: white;
+  padding: 0.6rem 1.2rem;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.2s;
+}
+
+.start-practice-button:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.35);
+  transform: translateY(-2px);
+}
+
+.start-practice-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 可滚动的临摹区域 */
+.practice-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+  background: radial-gradient(circle at center, #f8fafc 0%, #e2e8f0 100%);
+}
+
+.practice-focus {
+  background: white;
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.practice-preview,
+.practice-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  text-align: center;
+  color: #64748b;
+  gap: 1rem;
+}
+
+.preview-text,
+.practice-placeholder p {
+  font-size: 1.1rem;
+  color: #475569;
+}
+
+.preview-info {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+/* 固定的功能栏 */
+.practice-action-bar {
+  padding: 1rem 2rem;
+  background: white;
+  border-top: 1px solid rgba(99, 102, 241, 0.1);
+  box-shadow: 0 -5px 20px rgba(15, 23, 42, 0.05);
+  flex-shrink: 0;
+}
+
+.action-bar-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.action-hint {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.action-right {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.action-button {
+  border: none;
+  padding: 0.65rem 1.2rem;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.action-button.skip {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+}
+
+.action-button.skip:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.15);
+  transform: translateY(-2px);
+}
+
+.action-button.reset {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.action-button.reset:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  transform: translateY(-2px);
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 响应式设计 */
+@media (max-width: 1100px) {
+  .sidebar {
+    width: 320px;
+    min-width: 320px;
   }
-  .hero-actions {
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    max-height: 50vh;
+  }
+  .sidebar-content {
+    max-height: 40vh;
+  }
+  .practice-status-bar,
+  .practice-scroll-area,
+  .practice-action-bar {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .status-right {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .action-bar-content {
     flex-direction: column;
     align-items: stretch;
   }
-  .practice-head {
+  .action-hint {
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+  .action-right {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 700px) {
+  .import-buttons {
+    gap: 0.5rem;
+  }
+  .practice-status-bar {
     flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
   }
-  .session-meta {
-    flex-wrap: wrap;
-  }
-  .practice-main {
-    grid-template-columns: 1fr;
-  }
-  .topbar-stats {
-    flex-wrap: wrap;
+  .status-right {
+    width: 100%;
+    justify-content: space-between;
   }
 }
