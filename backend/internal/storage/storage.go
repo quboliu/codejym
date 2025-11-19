@@ -235,6 +235,25 @@ func (s *Storage) GetSession(ctx context.Context, userID, sessionID string) (*Se
 	return sess, nil
 }
 
+// GetSessionByAssetAndPath retrieves an existing session by user, asset, and file path.
+func (s *Storage) GetSessionByAssetAndPath(ctx context.Context, userID, assetID, relPath string) (*Session, error) {
+	sess := &Session{}
+	err := s.db.QueryRow(
+		ctx,
+		`SELECT id, user_id, asset_id, rel_path, cursor, errors, duration_seconds, created_at, updated_at
+		 FROM typing_sessions WHERE user_id = $1 AND asset_id = $2 AND rel_path = $3
+		 ORDER BY updated_at DESC LIMIT 1`,
+		userID, assetID, relPath,
+	).Scan(&sess.ID, &sess.UserID, &sess.AssetID, &sess.RelPath, &sess.Cursor, &sess.Errors, &sess.DurationSeconds, &sess.CreatedAt, &sess.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return sess, nil
+}
+
 func (s *Storage) UpdateSession(ctx context.Context, session *Session) error {
 	err := s.db.QueryRow(
 		ctx,

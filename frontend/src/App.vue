@@ -296,6 +296,7 @@ import {
   listAssets,
   login,
   patchSession,
+  querySession,
   setAuthToken,
   signup,
   uploadAsset,
@@ -600,24 +601,20 @@ async function handleSelectFile(path: string) {
 }
 
 async function ensureSession(assetId: string, filePath: string) {
-  const storageKey = sessionKey(user.value?.id ?? 'anon', assetId, filePath)
-  let sessionData: Session | null = null
-
-  const existingId = localStorage.getItem(storageKey)
-  if (existingId) {
-    try {
-      sessionData = await fetchSession(existingId)
-    } catch {
-      localStorage.removeItem(storageKey)
+  // 首先尝试从服务器查询现有的 session
+  try {
+    const sessionData = await querySession(assetId, filePath)
+    return sessionData
+  } catch (err) {
+    // 如果没有找到现有的 session（404），创建一个新的
+    const error = err as Error
+    if (error.message.includes('session not found')) {
+      const newSession = await createSession(assetId, filePath)
+      return newSession
     }
+    // 其他错误则抛出
+    throw err
   }
-
-  if (!sessionData) {
-    sessionData = await createSession(assetId, filePath)
-    localStorage.setItem(storageKey, sessionData.id)
-  }
-
-  return sessionData
 }
 
 // 练习控制
@@ -693,10 +690,6 @@ function mapKeyToChar(event: KeyboardEvent): string | null {
 }
 
 // 工具函数
-function sessionKey(userId: string | null, assetId: string, path: string) {
-  return `ccb:${userId ?? 'anon'}:${assetId}:${path}`
-}
-
 function formatDuration(seconds: number) {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60

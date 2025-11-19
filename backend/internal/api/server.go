@@ -527,10 +527,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		s.querySession(user, w, r)
 	case http.MethodPost:
 		s.createSession(user, w, r)
 	default:
-		methodNotAllowed(w, http.MethodPost)
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
 }
 
@@ -554,6 +556,25 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPatch)
 	}
+}
+
+func (s *Server) querySession(user *storage.User, w http.ResponseWriter, r *http.Request) {
+	assetID := r.URL.Query().Get("assetId")
+	path := r.URL.Query().Get("path")
+	if assetID == "" || path == "" {
+		writeError(w, http.StatusBadRequest, "assetId and path query parameters are required")
+		return
+	}
+	session, err := s.store.GetSessionByAssetAndPath(r.Context(), user.ID, assetID, path)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "session not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to query session")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
 }
 
 func (s *Server) createSession(user *storage.User, w http.ResponseWriter, r *http.Request) {
