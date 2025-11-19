@@ -95,8 +95,8 @@ const displayContent = computed(() => {
         span.className = 'code-completed'
         span.textContent = text
         node.parentNode!.replaceChild(span, node)
-      } else if (nodeStart >= props.cursor) {
-        // 整个节点都是未完成
+      } else if (nodeStart > props.cursor) {
+        // 整个节点都是未完成（光标在节点之前）
         const span = document.createElement('span')
         // 检查是否在注释中
         const inComment = isInCommentRange(nodeStart)
@@ -104,7 +104,7 @@ const displayContent = computed(() => {
         span.textContent = text
         node.parentNode!.replaceChild(span, node)
       } else if (!cursorInserted) {
-        // 光标在这个节点中间
+        // 光标在这个节点中（包括开头、中间）
         const offset = props.cursor - nodeStart
         const before = text.slice(0, offset)
         const after = text.slice(offset)
