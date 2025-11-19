@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>测试进度保存</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    .log { background: #f5f5f5; padding: 10px; margin: 10px 0; max-height: 400px; overflow-y: auto; }
+    .timestamp { color: #666; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>进度保存测试</h1>
+  <div id="output" class="log"></div>
+
+  <script>
+    const output = document.getElementById('output');
+    let callCount = 0;
+    const startTime = Date.now();
+
+    function log(message) {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const div = document.createElement('div');
+      div.innerHTML = `<span class="timestamp">[${elapsed}s]</span> ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    // 模拟实时保存进度
+    const simulateProgressSave = () => {
+      callCount++;
+      log(`第 ${callCount} 次保存进度 - cursor: ${callCount}, errors: 0, duration: ${elapsed}s`);
+    };
+
+    log('开始测试，每 1.2 秒保存一次进度...');
+    const interval = setInterval(simulateProgressSave, 1200);
+
+    // 10 秒后停止
+    setTimeout(() => {
+      clearInterval(interval);
+      log('测试完成，总共保存 ' + callCount + ' 次');
+    }, 10000);
+  </script>
+</body>
+</html>

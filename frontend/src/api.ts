@@ -102,6 +102,11 @@ export function createSession(assetId: string, filePath: string) {
   });
 }
 
+export function querySession(assetId: string, filePath: string) {
+  const encoded = encodeURIComponent(filePath);
+  return request<Session>(`/api/sessions?assetId=${assetId}&path=${encoded}`);
+}
+
 export function fetchSession(sessionId: string) {
   return request<Session>(`/api/sessions/${sessionId}`);
 }

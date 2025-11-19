@@ -28,17 +28,36 @@ type Server struct {
 	store      *storage.Storage
 	logger     *log.Logger
 	authSecret []byte
+	authTTL    time.Duration
 }
 
-const authTokenTTL = 30 * 24 * time.Hour
-
 type userContextKey struct{}
+
+// 默认 Token 超时时间：24 小时（比原来的 30 天更安全）
+const defaultAuthTokenTTL = 24 * time.Hour
+
+// 获取 Token 超时时间（支持环境变量 AUTH_TOKEN_TTL 配置）
+func getAuthTokenTTL() time.Duration {
+	if ttlStr := os.Getenv("AUTH_TOKEN_TTL"); ttlStr != "" {
+		// 支持格式：30m, 24h, 7d
+		if ttl, err := time.ParseDuration(ttlStr); err == nil {
+			return ttl
+		}
+		log.Printf("warning: invalid AUTH_TOKEN_TTL format, using default %v", defaultAuthTokenTTL)
+	}
+	return defaultAuthTokenTTL
+}
 
 func NewServer(store *storage.Storage, logger *log.Logger, authSecret []byte) *Server {
 	if logger == nil {
 		logger = log.New(os.Stdout, "[api] ", log.LstdFlags)
 	}
-	return &Server{store: store, logger: logger, authSecret: authSecret}
+	return &Server{
+		store:      store,
+		logger:     logger,
+		authSecret: authSecret,
+		authTTL:    getAuthTokenTTL(),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -53,7 +72,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/assets/", s.withAuth(s.handleAssetByID))
 	mux.HandleFunc("/api/sessions", s.withAuth(s.handleSessions))
 	mux.HandleFunc("/api/sessions/", s.withAuth(s.handleSessionByID))
-	return withCORS(logRequests(mux, s.logger))
+
+	// 应用安全中间件
+	handler := withSecurityHeaders(withCORS(logRequests(mux, s.logger)))
+	return handler
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -505,10 +527,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		s.querySession(user, w, r)
 	case http.MethodPost:
 		s.createSession(user, w, r)
 	default:
-		methodNotAllowed(w, http.MethodPost)
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
 }
 
@@ -532,6 +556,25 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPatch)
 	}
+}
+
+func (s *Server) querySession(user *storage.User, w http.ResponseWriter, r *http.Request) {
+	assetID := r.URL.Query().Get("assetId")
+	path := r.URL.Query().Get("path")
+	if assetID == "" || path == "" {
+		writeError(w, http.StatusBadRequest, "assetId and path query parameters are required")
+		return
+	}
+	session, err := s.store.GetSessionByAssetAndPath(r.Context(), user.ID, assetID, path)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "session not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to query session")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
 }
 
 func (s *Server) createSession(user *storage.User, w http.ResponseWriter, r *http.Request) {
@@ -734,6 +777,29 @@ func withCORS(next http.Handler) http.Handler {
 	})
 }
 
+// 安全头中间件 - 禁用 Cookies 并添加安全头
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 明确拒绝 Cookies - 系统不使用 Cookies 认证
+		w.Header().Set("Set-Cookie", "Path=/; HttpOnly; Max-Age=0")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, private")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+
+		// 安全相关头
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// 明确说明认证方式：使用 Authorization Header Bearer Token，不使用 Cookies
+		w.Header().Set("WWW-Authenticate", "Bearer realm=\"CodeJYM API\"")
+		w.Header().Set("X-Auth-Method", "JWT Bearer Token (no cookies)")
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
@@ -775,7 +841,7 @@ func (s *Server) issueToken(userID string) (string, error) {
 	claims := jwt.RegisteredClaims{
 		Subject:   userID,
 		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(authTokenTTL)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(s.authTTL)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.authSecret)
