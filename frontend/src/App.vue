@@ -978,9 +978,15 @@ async function handleSelectFile(path: string) {
     elapsedSeconds.value = sessionData.durationSeconds ?? 0
     fileContent.value = content
 
-    // 设置cursor，确保跳过注释
+    // 设置cursor
+    // 对于新文件（cursor = 0）从文档开头开始，让用户看到完整内容
+    // 只有恢复已有进度时（cursor > 0）才需要确保光标不在注释中间
     const initialCursor = Math.min(sessionData.cursor ?? 0, content.content.length)
-    cursor.value = findNextNonCommentPosition(initialCursor)
+    if (initialCursor === 0) {
+      cursor.value = 0
+    } else {
+      cursor.value = findNextNonCommentPosition(initialCursor)
+    }
   } catch (err) {
     toast.error((err as Error).message)
   }
@@ -1010,7 +1016,8 @@ function skipCurrentLine() {
 
   const newlineIndex = fileContent.value.content.indexOf('\n', cursor.value)
   const nextCursor = newlineIndex === -1 ? fileContent.value.content.length : newlineIndex + 1
-  cursor.value = nextCursor
+  // 跳过下一行开头的注释
+  cursor.value = findNextNonCommentPosition(nextCursor)
 }
 
 async function handleResetProgress() {
