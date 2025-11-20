@@ -336,25 +336,18 @@ function displayChar(char: string) {
 
 /* 已完成的代码 - 保留语法高亮，正常显示 */
 .code-foreground :deep(.code-completed) {
-  color: var(--color-text-primary);
-  /* 语法高亮颜色会自动应用（通过 hljs- class） */
+  /* 不设置 color，让 hljs class 的颜色生效 */
 }
 
-/* 已完成的代码中的语法高亮元素 - 保持原有颜色 */
-.code-foreground :deep(.code-completed.hljs-keyword),
-.code-foreground :deep(.code-completed.hljs-string),
-.code-foreground :deep(.code-completed.hljs-number),
-.code-foreground :deep(.code-completed.hljs-title),
-.code-foreground :deep(.code-completed.hljs-function),
-.code-foreground :deep(.code-completed.hljs-comment),
-.code-foreground :deep(.code-completed.hljs-type),
-.code-foreground :deep(.code-completed.hljs-built_in),
-.code-foreground :deep(.code-completed.hljs-literal),
-.code-foreground :deep(.code-completed.hljs-variable),
-.code-foreground :deep(.code-completed.hljs-attr),
-.code-foreground :deep(.code-completed.hljs-meta) {
+/* 已完成的代码中的所有语法高亮元素 - 使用通配符匹配所有 hljs- class */
+.code-foreground :deep(.code-completed[class*="hljs-"]) {
   /* 保持 hljs 原有的颜色，稍微降低亮度表示已完成 */
-  filter: brightness(0.9);
+  filter: brightness(0.9) !important;
+}
+
+/* 已完成但没有高亮的普通文本 */
+.code-foreground :deep(.code-completed:not([class*="hljs-"])) {
+  color: var(--color-text-primary);
 }
 
 /* 未完成的代码 - 隐藏 */
