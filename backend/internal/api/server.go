@@ -332,11 +332,8 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assetDir := s.store.AssetDir(user.ID, assetID)
-	if err := os.MkdirAll(assetDir, 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare storage")
-		return
-	}
+	// 存储路径：uploads/{userID}/{assetID}/
+	basePath := fmt.Sprintf("uploads/%s/%s", user.ID, assetID)
 
 	var fileCount int
 	var bytesTotal int64
@@ -345,8 +342,13 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to inspect upload")
 		return
 	}
+
+	fileStorage := s.store.FileStorage()
+	ctx := r.Context()
+
 	if isZip {
-		if err := extractZip(tmp, assetDir, &fileCount, &bytesTotal); err != nil {
+		// 解压并上传到存储
+		if err := extractZipToStorage(ctx, tmp, fileStorage, basePath, &fileCount, &bytesTotal); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid zip: %v", err))
 			return
 		}
@@ -355,16 +357,19 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		// 单文件上传
 		dstName := sanitizeFilename(header.Filename)
 		if dstName == "" {
 			dstName = fmt.Sprintf("asset-%s", assetID)
 		}
-		dstPath := filepath.Join(assetDir, dstName)
+		storagePath := fmt.Sprintf("%s/%s", basePath, dstName)
+		contentType := detectContentTypeFromFilename(dstName)
+
 		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to reset upload")
 			return
 		}
-		if err := copyFile(tmp, dstPath); err != nil {
+		if err := saveFileToStorage(ctx, tmp, fileStorage, storagePath, contentType); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to store file")
 			return
 		}
@@ -376,7 +381,7 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 		ID:         assetID,
 		UserID:     user.ID,
 		Name:       deriveAssetName(header),
-		RootPath:   assetDir,
+		RootPath:   basePath, // 存储路径：uploads/{userID}/{assetID}
 		SizeBytes:  bytesTotal,
 		FileCount:  fileCount,
 		SourceName: header.Filename,
@@ -427,21 +432,24 @@ func (s *Server) handleAssetPaste(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to allocate id")
 		return
 	}
-	assetDir := s.store.AssetDir(user.ID, assetID)
-	if err := os.MkdirAll(assetDir, 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare storage")
-		return
-	}
-	dstPath := filepath.Join(assetDir, filename)
-	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
+
+	// 存储路径：uploads/{userID}/{assetID}/{filename}
+	basePath := fmt.Sprintf("uploads/%s/%s", user.ID, assetID)
+	storagePath := fmt.Sprintf("%s/%s", basePath, filename)
+	contentType := detectContentTypeFromFilename(filename)
+
+	// 上传到存储
+	fileStorage := s.store.FileStorage()
+	if err := saveFileToStorage(r.Context(), strings.NewReader(content), fileStorage, storagePath, contentType); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store file")
 		return
 	}
+
 	asset := &storage.Asset{
 		ID:         assetID,
 		UserID:     user.ID,
 		Name:       deriveAssetNameFromFilename(filename),
-		RootPath:   assetDir,
+		RootPath:   basePath, // 存储路径：uploads/{userID}/{assetID}
 		SizeBytes:  int64(len(data)),
 		FileCount:  1,
 		SourceName: filename,
@@ -552,7 +560,10 @@ func (s *Server) handleAssetTree(user *storage.User, id string, w http.ResponseW
 		}
 		return
 	}
-	nodes, err := buildTree(asset.RootPath, "")
+
+	// 使用新的存储抽象层获取文件树
+	fileStorage := s.store.FileStorage()
+	nodes, err := buildTreeFromStorage(r.Context(), fileStorage, asset.RootPath, "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -579,9 +590,12 @@ func (s *Server) handleAssetFile(user *storage.User, id string, w http.ResponseW
 		writeError(w, http.StatusBadRequest, "path query is required")
 		return
 	}
-	data, err := readAssetFile(asset.RootPath, rel)
+
+	// 使用新的存储抽象层读取文件
+	fileStorage := s.store.FileStorage()
+	data, err := readAssetFileFromStorage(r.Context(), fileStorage, asset.RootPath, rel)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "file not found")
 		} else {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -670,7 +684,10 @@ func (s *Server) createSession(user *storage.User, w http.ResponseWriter, r *htt
 		}
 		return
 	}
-	if _, err := readAssetFile(asset.RootPath, payload.Path); err != nil {
+
+	// 验证文件是否存在（使用新的存储抽象层）
+	fileStorage := s.store.FileStorage()
+	if _, err := readAssetFileFromStorage(r.Context(), fileStorage, asset.RootPath, payload.Path); err != nil {
 		writeError(w, http.StatusBadRequest, "file path invalid")
 		return
 	}
@@ -1452,8 +1469,14 @@ func (s *Server) handleAssetUploadToExisting(user *storage.User, assetID string,
 		writeError(w, http.StatusInternalServerError, "failed to inspect upload")
 		return
 	}
+
+	fileStorage := s.store.FileStorage()
+	ctx := r.Context()
+	basePath := asset.RootPath // 复用现有的存储路径
+
 	if isZip {
-		if err := extractZip(tmp, asset.RootPath, &fileCount, &bytesTotal); err != nil {
+		// 解压并上传到存储
+		if err := extractZipToStorage(ctx, tmp, fileStorage, basePath, &fileCount, &bytesTotal); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid zip: %v", err))
 			return
 		}
@@ -1462,16 +1485,19 @@ func (s *Server) handleAssetUploadToExisting(user *storage.User, assetID string,
 			return
 		}
 	} else {
+		// 单文件上传
 		dstName := sanitizeFilename(header.Filename)
 		if dstName == "" {
-			dstName = fmt.Sprintf("file-%d", time.Now().Unix())
+			dstName := fmt.Sprintf("file-%d", time.Now().Unix())
 		}
-		dstPath := filepath.Join(asset.RootPath, dstName)
+		storagePath := fmt.Sprintf("%s/%s", basePath, dstName)
+		contentType := detectContentTypeFromFilename(dstName)
+
 		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to reset upload")
 			return
 		}
-		if err := copyFile(tmp, dstPath); err != nil {
+		if err := saveFileToStorage(ctx, tmp, fileStorage, storagePath, contentType); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to store file")
 			return
 		}
@@ -1531,8 +1557,14 @@ func (s *Server) handleAssetPasteToExisting(user *storage.User, assetID string, 
 	}
 	data := []byte(content)
 
-	dstPath := filepath.Join(asset.RootPath, filename)
-	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
+	// 存储路径
+	basePath := asset.RootPath // 复用现有的存储路径
+	storagePath := fmt.Sprintf("%s/%s", basePath, filename)
+	contentType := detectContentTypeFromFilename(filename)
+
+	// 上传到存储
+	fileStorage := s.store.FileStorage()
+	if err := saveFileToStorage(r.Context(), strings.NewReader(content), fileStorage, storagePath, contentType); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store file")
 		return
 	}

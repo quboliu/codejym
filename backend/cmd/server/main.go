@@ -36,7 +36,44 @@ func main() {
 	}
 	defer pool.Close()
 
-	store, err := storage.New(pool, *dataDir)
+	// 初始化文件存储（本地或 S3）
+	var fileStorage storage.FileStorage
+	storageType := envOr("STORAGE_TYPE", "local")
+
+	switch storageType {
+	case "s3":
+		// S3 存储配置
+		s3Endpoint := envOr("S3_ENDPOINT", "")
+		s3AccessKey := envOr("S3_ACCESS_KEY", "")
+		s3SecretKey := envOr("S3_SECRET_KEY", "")
+		s3Bucket := envOr("S3_BUCKET", "")
+		s3Region := envOr("S3_REGION", "us-east-1")
+		s3URLPrefix := envOr("S3_URL_PREFIX", "")
+
+		if s3Endpoint == "" || s3AccessKey == "" || s3SecretKey == "" || s3Bucket == "" {
+			log.Fatal("S3 storage requires: S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET")
+		}
+
+		fileStorage, err = storage.NewS3Storage(s3Endpoint, s3AccessKey, s3SecretKey, s3Bucket, s3Region, s3URLPrefix)
+		if err != nil {
+			log.Fatalf("failed to initialize S3 storage: %v", err)
+		}
+		log.Printf("using S3 storage: endpoint=%s, bucket=%s", s3Endpoint, s3Bucket)
+
+	case "local":
+		// 本地存储配置
+		uploadsDir := filepath.Join(*dataDir, "uploads")
+		fileStorage, err = storage.NewLocalStorage(uploadsDir)
+		if err != nil {
+			log.Fatalf("failed to initialize local storage: %v", err)
+		}
+		log.Printf("using local storage: %s", uploadsDir)
+
+	default:
+		log.Fatalf("invalid STORAGE_TYPE: %s (must be 'local' or 's3')", storageType)
+	}
+
+	store, err := storage.New(pool, *dataDir, fileStorage)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}

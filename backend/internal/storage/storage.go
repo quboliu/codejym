@@ -15,13 +15,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Storage persists metadata to PostgreSQL while keeping uploaded blobs on disk.
+// Storage persists metadata to PostgreSQL while keeping uploaded blobs on disk or S3.
 type Storage struct {
-	uploadsDir string
-	db         *pgxpool.Pool
+	uploadsDir  string      // 保留用于兼容性（本地存储时使用）
+	db          *pgxpool.Pool
+	fileStorage FileStorage // 抽象文件存储接口
 }
 
-func New(db *pgxpool.Pool, root string) (*Storage, error) {
+// New 创建 Storage 实例
+// db: 数据库连接池
+// root: 数据根目录（仅本地存储时使用）
+// fileStorage: 文件存储实现（LocalStorage 或 S3Storage），如果为 nil 则使用默认本地存储
+func New(db *pgxpool.Pool, root string, fileStorage FileStorage) (*Storage, error) {
 	if db == nil {
 		return nil, errors.New("storage: db pool is nil")
 	}
@@ -29,12 +34,23 @@ func New(db *pgxpool.Pool, root string) (*Storage, error) {
 		root = "data"
 	}
 	uploadsDir := filepath.Join(root, "uploads")
-	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
-		return nil, err
+
+	// 如果未提供文件存储，使用默认本地存储
+	if fileStorage == nil {
+		if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
+			return nil, err
+		}
+		var err error
+		fileStorage, err = NewLocalStorage(uploadsDir)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return &Storage{
-		uploadsDir: uploadsDir,
-		db:         db,
+		uploadsDir:  uploadsDir,
+		db:          db,
+		fileStorage: fileStorage,
 	}, nil
 }
 
@@ -113,6 +129,11 @@ type Session struct {
 	DurationSeconds int       `json:"durationSeconds"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+// FileStorage 返回文件存储接口
+func (s *Storage) FileStorage() FileStorage {
+	return s.fileStorage
 }
 
 func (s *Storage) AssetDir(userID, assetID string) string {
