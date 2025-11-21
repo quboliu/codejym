@@ -1,12 +1,24 @@
 [Unit]
 Description=PostgreSQL Database Backup Timer
+Documentation=file:///opt/codejym/scripts/BACKUP_README.md
 Requires=pg-backup.service
 
 [Timer]
-# 每天凌晨 2:00 执行
-OnCalendar=daily
+# 每天凌晨 2:00 执行备份
 OnCalendar=*-*-* 02:00:00
+
+# 如果错过了执行时间，系统启动后立即执行
 Persistent=true
+
+# 首次执行前随机延迟 0-5 分钟（可选，避免多个定时任务同时执行）
+# RandomizedDelaySec=5min
+
+# 常用时间配置示例：
+# OnCalendar=*-*-* 02:00:00        # 每天凌晨 2:00
+# OnCalendar=*-*-* 03:30:00        # 每天凌晨 3:30
+# OnCalendar=*-*-* 00/6:00:00      # 每 6 小时一次（0:00, 6:00, 12:00, 18:00）
+# OnCalendar=Sun *-*-* 00:00:00    # 每周日午夜
+# OnCalendar=Mon..Fri *-*-* 09:00  # 周一到周五早上 9:00
 
 [Install]
 WantedBy=timers.target
