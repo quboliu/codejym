@@ -2,6 +2,11 @@
 
 set -e
 
+# 切换到项目根目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 echo "================================"
 echo "  CodeJYM 全功能一键部署脚本"
 echo "  （包含域名访问功能）"
@@ -30,6 +35,7 @@ if ! command -v docker compose &> /dev/null; then
 fi
 
 echo -e "${GREEN}✓${NC} Docker 和 Docker Compose 检查通过"
+echo "  工作目录: $PROJECT_ROOT"
 echo ""
 
 # 停止并清理旧容器
