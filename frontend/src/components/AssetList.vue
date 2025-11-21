@@ -9,25 +9,31 @@
     >
       <div class="asset-header">
         <span class="asset-name">{{ asset.name }}</span>
-        <span v-if="getExtension(asset.sourceName)" class="asset-badge">
-          {{ getExtension(asset.sourceName).toUpperCase() }}
-        </span>
-      </div>
-      <div class="asset-meta">
-        <span class="meta-item">
-          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 3H10L13 6V17H4V3Z" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M10 3V6H13" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          {{ asset.fileCount }}
-        </span>
-        <span class="meta-divider">·</span>
-        <span class="meta-item">{{ formatBytes(asset.sizeBytes) }}</span>
+        <div class="asset-actions">
+          <button
+            class="btn-icon-xs"
+            @click.stop="$emit('rename', asset.id)"
+            title="重命名"
+          >
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 3L17 3L17 9M16 4L9 11L6 14L3 14L3 11L6 8L13 1" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button
+            class="btn-icon-xs btn-icon-danger"
+            @click.stop="$emit('delete', asset.id)"
+            title="删除"
+          >
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 5H17M8 5V3H12V5M8 9V15M12 9V15M7 5H13L14 17H6L7 5Z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </button>
 
     <div v-if="assets.length === 0" class="asset-empty">
-      <p>暂无素材</p>
+      <p>暂无训练组</p>
       <p class="text-secondary">上传文件或粘贴代码开始练习</p>
     </div>
   </div>
@@ -43,25 +49,9 @@ defineProps<{
 
 defineEmits<{
   select: [assetId: string]
+  rename: [assetId: string]
+  delete: [assetId: string]
 }>()
-
-function getExtension(name: string) {
-  const clean = (name ?? '').trim()
-  if (!clean) return ''
-  const lastDot = clean.lastIndexOf('.')
-  if (lastDot <= 0 || lastDot === clean.length - 1) {
-    return ''
-  }
-  return clean.slice(lastDot + 1).toLowerCase()
-}
-
-function formatBytes(bytes: number) {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / Math.pow(1024, exponent)
-  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`
-}
 </script>
 
 <style scoped>
@@ -77,8 +67,8 @@ function formatBytes(bytes: number) {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -122,40 +112,43 @@ function formatBytes(bytes: number) {
   white-space: nowrap;
 }
 
-.asset-badge {
-  flex-shrink: 0;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.05em;
-}
-
-.asset-card-active .asset-badge {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.asset-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
-}
-
-.asset-card-active .asset-meta {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.meta-item {
+.asset-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
 }
 
-.meta-divider {
-  opacity: 0.5;
+.asset-card:hover .asset-actions,
+.asset-card:focus-within .asset-actions {
+  opacity: 1;
+}
+
+.btn-icon-xs {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.btn-icon-xs:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.asset-card-active .btn-icon-xs:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.btn-icon-danger:hover {
+  background: var(--color-error) !important;
+  color: white !important;
 }
 
 .asset-empty {

@@ -21,6 +21,12 @@ export interface FileContent {
   path: string;
   language: string;
   content: string;
+  skipRanges: SkipRange[];
+}
+
+export interface SkipRange {
+  start: number;
+  end: number;
 }
 
 export interface Session {

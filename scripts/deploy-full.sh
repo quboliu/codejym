@@ -8,8 +8,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 echo "================================"
-echo "  CodeJYM 本地部署脚本"
-echo "  （仅本地开发使用）"
+echo "  CodeJYM 全功能一键部署脚本"
+echo "  （包含域名访问功能）"
 echo "================================"
 echo ""
 
@@ -39,19 +39,19 @@ echo "  工作目录: $PROJECT_ROOT"
 echo ""
 
 # 停止并清理旧容器
-echo -e "${YELLOW}[1/6] 停止并清理旧容器...${NC}"
-docker compose -f config/docker-compose.yml down 2>/dev/null || true
+echo -e "${YELLOW}[1/7] 停止并清理旧容器...${NC}"
+docker compose -f config/docker-compose.proxy.yml down 2>/dev/null || true
 echo -e "${GREEN}✓${NC} 旧容器已停止"
 echo ""
 
-# 清理旧镜像
-echo -e "${YELLOW}[2/6] 清理旧镜像（确保重新构建）...${NC}"
+# 清理旧镜像（可选，确保使用最新代码）
+echo -e "${YELLOW}[2/7] 清理旧镜像（确保重新构建）...${NC}"
 docker rmi codecopybook:local 2>/dev/null || echo "  无旧镜像需要清理"
 echo -e "${GREEN}✓${NC} 清理完成"
 echo ""
 
 # 构建镜像
-echo -e "${YELLOW}[3/6] 构建 Docker 镜像（前端 + 后端）...${NC}"
+echo -e "${YELLOW}[3/7] 构建 Docker 镜像（前端 + 后端）...${NC}"
 echo "  这将会："
 echo "  • 构建最新的前端（Vue 3 + TypeScript + Vite）"
 echo "  • 构建最新的后端（Go 1.24）"
@@ -59,7 +59,7 @@ echo "  • 打包成生产镜像"
 echo ""
 echo "  这可能需要几分钟时间，请耐心等待..."
 echo ""
-docker compose -f config/docker-compose.yml build --no-cache
+docker compose -f config/docker-compose.proxy.yml build --no-cache
 if [ $? -ne 0 ]; then
     echo -e "${RED}错误: 镜像构建失败${NC}"
     exit 1
@@ -67,12 +67,13 @@ fi
 echo -e "${GREEN}✓${NC} 镜像构建完成"
 echo ""
 
-# 启动服务
-echo -e "${YELLOW}[4/6] 启动服务...${NC}"
+# 启动完整服务（包含反向代理）
+echo -e "${YELLOW}[4/7] 启动完整服务...${NC}"
 echo "  • PostgreSQL 数据库"
 echo "  • CodeJYM 应用（前端+后端）"
+echo "  • Nginx 反向代理"
 echo ""
-docker compose -f config/docker-compose.yml up -d
+docker compose -f config/docker-compose.proxy.yml up -d
 if [ $? -ne 0 ]; then
     echo -e "${RED}错误: 服务启动失败${NC}"
     exit 1
@@ -81,14 +82,15 @@ echo -e "${GREEN}✓${NC} 服务启动成功"
 echo ""
 
 # 等待服务就绪
-echo -e "${YELLOW}[5/6] 等待服务就绪...${NC}"
+echo -e "${YELLOW}[5/7] 等待服务就绪...${NC}"
+echo "正在检查 PostgreSQL 和应用服务启动状态..."
 
 # 检查 PostgreSQL
 MAX_RETRIES=60
 RETRY_COUNT=0
 echo "正在检查 PostgreSQL..."
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker compose -f config/docker-compose.yml ps postgres | grep -q "Up.*healthy"; then
+    if docker compose -f config/docker-compose.proxy.yml ps postgres | grep -q "Up.*healthy"; then
         echo -e "${GREEN}✓${NC} PostgreSQL 服务健康"
         break
     fi
@@ -101,10 +103,10 @@ done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     echo ""
-    echo -e "${YELLOW}警告: PostgreSQL 健康检查超时${NC}"
+    echo -e "${YELLOW}警告: PostgreSQL 健康检查超时，但服务可能仍在启动中${NC}"
     sleep 5
 else
-    sleep 3
+    sleep 3  # 额外等待确保应用完全启动
 fi
 
 # 检查应用服务
@@ -125,10 +127,10 @@ done
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     echo ""
     echo -e "${YELLOW}警告: 应用服务响应超时${NC}"
-    docker compose -f config/docker-compose.yml ps
+    docker compose -f config/docker-compose.proxy.yml ps
     echo ""
     echo "应用日志:"
-    docker compose -f config/docker-compose.yml logs --tail=20 codecopybook
+    docker compose -f config/docker-compose.proxy.yml logs --tail=20 codecopybook
     echo ""
 else
     echo ""
@@ -137,33 +139,40 @@ fi
 echo ""
 
 # 验证部署
-echo -e "${YELLOW}[6/6] 验证部署...${NC}"
+echo -e "${YELLOW}[6/7] 验证部署...${NC}"
 echo ""
 
+# 测试本地访问
 if curl -s http://localhost:8080 > /dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} 本地访问正常"
+    echo -e "${GREEN}✓${NC} 本地访问正常 (http://localhost:8080)"
 else
     echo -e "${RED}✗${NC} 本地访问失败"
 fi
 
+# 测试 API 访问
 if curl -s http://localhost:8080/api/health > /dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} API 访问正常"
+    echo -e "${GREEN}✓${NC} API 访问正常 (http://localhost:8080/api)"
 else
     echo -e "${RED}✗${NC} API 访问失败"
 fi
 
-RUNNING_SERVICES=$(docker compose -f config/docker-compose.yml ps --services --filter "status=running" | wc -l)
-TOTAL_SERVICES=$(docker compose -f config/docker-compose.yml ps --services | wc -l)
+# 检查服务状态
+RUNNING_SERVICES=$(docker compose -f config/docker-compose.proxy.yml ps --services --filter "status=running" | wc -l)
+TOTAL_SERVICES=$(docker compose -f config/docker-compose.proxy.yml ps --services | wc -l)
 
 echo -e "${GREEN}✓${NC} 运行服务数量: $RUNNING_SERVICES / $TOTAL_SERVICES"
 echo ""
 
 # 显示服务信息
+echo -e "${YELLOW}[7/7] 部署完成！${NC}"
+echo ""
 echo "================================"
 echo "  📱 访问地址"
 echo "================================"
 echo ""
 echo -e "${BLUE}本地访问:${NC}       http://localhost:8080"
+echo -e "${BLUE}域名访问:${NC}       http://jiezispace.com"
+echo -e "${BLUE}www 访问:${NC}      http://www.jiezispace.com"
 echo ""
 echo "================================"
 echo "  🔌 API 端点"
@@ -178,17 +187,17 @@ echo "================================"
 echo "  🗄️  数据库配置"
 echo "================================"
 echo ""
-echo -e "${BLUE}主机:${NC}           postgres (容器内) / localhost:5432 (主机)"
-echo -e "${BLUE}端口:${NC}           5432"
+echo -e "${BLUE}主机:${NC}           postgres (容器内) / localhost:5433 (主机)"
+echo -e "${BLUE}端口:${NC}           5432 (容器内) / 5433 (主机)"
 echo -e "${BLUE}数据库:${NC}         codecopybook"
 echo -e "${BLUE}用户名:${NC}         codecopy"
-echo -e "${BLUE}密码:${NC}           codecopy"
+echo -e "${BLUE}密码:${NC}           codecopy123"
 echo ""
 echo "================================"
 echo "  📊 容器状态"
 echo "================================"
 echo ""
-docker compose -f config/docker-compose.yml ps
+docker compose -f config/docker-compose.proxy.yml ps
 echo ""
 
 # 显示管理命令
@@ -197,23 +206,24 @@ echo "  🛠️  管理命令"
 echo "================================"
 echo ""
 echo -e "${BLUE}查看服务状态:${NC}"
-echo "  docker compose -f config/docker-compose.yml ps"
+echo "  docker compose -f config/docker-compose.proxy.yml ps"
 echo ""
 echo -e "${BLUE}查看日志:${NC}"
-echo "  docker compose -f config/docker-compose.yml logs -f codecopybook  # 应用日志"
-echo "  docker compose -f config/docker-compose.yml logs -f postgres      # 数据库日志"
+echo "  docker compose -f config/docker-compose.proxy.yml logs -f codecopybook  # 应用日志"
+echo "  docker compose -f config/docker-compose.proxy.yml logs -f postgres      # 数据库日志"
+echo "  docker compose -f config/docker-compose.proxy.yml logs -f nginx         # Nginx日志"
 echo ""
 echo -e "${BLUE}重启服务:${NC}"
-echo "  docker compose -f config/docker-compose.yml restart               # 重启所有"
-echo "  docker compose -f config/docker-compose.yml restart codecopybook  # 仅重启应用"
+echo "  docker compose -f config/docker-compose.proxy.yml restart               # 重启所有"
+echo "  docker compose -f config/docker-compose.proxy.yml restart codecopybook  # 仅重启应用"
 echo ""
 echo -e "${BLUE}停止服务:${NC}"
-echo "  docker compose -f config/docker-compose.yml stop                  # 停止所有"
-echo "  docker compose -f config/docker-compose.yml down                  # 停止并删除容器"
-echo "  docker compose -f config/docker-compose.yml down -v               # 完全清理（含数据）"
+echo "  docker compose -f config/docker-compose.proxy.yml stop                  # 停止所有"
+echo "  docker compose -f config/docker-compose.proxy.yml down                  # 停止并删除容器"
+echo "  docker compose -f config/docker-compose.proxy.yml down -v               # 完全清理（含数据）"
 echo ""
 echo -e "${BLUE}更新部署:${NC}"
-echo "  ./deploy.sh                          # 重新运行此脚本"
+echo "  ./deploy-full.sh                                                 # 重新运行此脚本"
 echo ""
 echo "================================"
 echo ""
@@ -223,7 +233,8 @@ echo ""
 echo -e "${BLUE}现在你可以：${NC}"
 echo ""
 echo "  1. 在浏览器中打开："
-echo "     • http://localhost:8080"
+echo "     • http://jiezispace.com （域名访问）"
+echo "     • http://localhost:8080 （本地访问）"
 echo ""
 echo "  2. 注册新用户并体验新功能："
 echo "     • ✨ 默认训练组自动创建"
@@ -233,7 +244,7 @@ echo "     • 🗂️  文件树右键菜单"
 echo "     • 📂 收起/展开训练组和文件列表"
 echo ""
 echo "  3. 查看实时日志："
-echo "     docker compose -f config/docker-compose.yml logs -f"
+echo "     docker compose -f config/docker-compose.proxy.yml logs -f"
 echo ""
 echo "================================"
 echo ""

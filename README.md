@@ -1,197 +1,247 @@
 # CodeJYM - 代码学习平台
 
-## 🚀 一键部署（包含域名访问）
+> 一个帮助你通过临摹代码来提升编程技能的 Web 应用
 
-现在你可以使用一个脚本启动所有服务，包括反向代理：
+## 🚀 快速开始
 
+### 本地开发
 ```bash
-./deploy-full.sh
+# 启动所有服务（PostgreSQL + 应用）
+./scripts/deploy.sh
+
+# 访问应用
+open http://localhost:8080
 ```
 
-这将自动：
-1. ✅ 清理旧容器
-2. ✅ 构建镜像
-3. ✅ 启动 PostgreSQL + 应用 + Nginx
-4. ✅ 等待服务就绪
-5. ✅ 验证部署成功
+### 生产部署（含 Nginx 反向代理）
+```bash
+# 全功能部署（PostgreSQL + 应用 + Nginx）
+./scripts/deploy-full.sh
+
+# 通过域名访问
+open http://jiezispace.com
+```
 
 ---
 
-## 📋 访问地址
+## 📦 项目结构
 
-### 本地访问
-- **应用**：http://localhost:8080
-- **API**：http://localhost:8080/api
-- **数据库**：localhost:5432
-
-### 通过 Nginx 反向代理
-- **应用**：http://localhost
-- **API**：http://localhost/api
-
-### 你的域名
-- **jiezispace.com**：通过 Nginx 代理访问
-- **www.jiezispace.com**：通过 Nginx 代理访问
+```
+CodeJym/
+├── backend/              # Go 后端服务
+│   ├── cmd/             # 应用入口
+│   └── internal/        # 内部包
+│       ├── api/         # HTTP 处理器
+│       └── storage/     # 存储层（PostgreSQL + S3）
+├── frontend/            # React 前端应用
+├── scripts/             # 部署和运维脚本
+│   ├── deploy.sh
+│   ├── deploy-full.sh
+│   ├── backup-db-to-s3.sh
+│   ├── restore-db-from-s3.sh
+│   └── migrate-files-to-s3.go
+├── config/              # 配置文件备份
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   ├── Caddyfile
+│   └── nginx.conf
+└── docs/                # 📚 完整文档
+    ├── deployment/      # 部署指南
+    ├── migration/       # 迁移和升级
+    ├── bugs/            # Bug 报告
+    ├── security/        # 安全配置
+    ├── development/     # 开发文档
+    └── user-guide/      # 用户指南
+```
 
 ---
 
-## 🎯 快速开始
+## 📚 文档导航
 
-### 方式 1：全功能部署（推荐）
-```bash
-./deploy-full.sh
-```
-包含：PostgreSQL + 应用 + Nginx 反向代理
+### 🚀 部署相关
+- [快速开始指南](docs/deployment/QUICK_START.md) - 5分钟部署
+- [完整部署文档](docs/deployment/README_DEPLOYMENT.md) - 详细步骤
+- [域名配置指南](docs/deployment/DOMAIN_SETUP.md) - DNS 和 SSL 设置
+- [部署状态报告](docs/deployment/DEPLOYMENT_STATUS.md)
 
-### 方式 2：本地部署（仅本地访问）
-```bash
-./deploy.sh
-```
-包含：PostgreSQL + 应用
+### 🔄 迁移和升级
+- [S3 存储迁移设计](docs/migration/STORAGE_MIGRATION_DESIGN.md) - 完整架构设计
+- [迁移实施指南](docs/migration/IMPLEMENTATION_GUIDE.md) - 分步操作手册
+- [迁移总结](docs/migration/MIGRATION_SUMMARY.md) - 已完成工作和后续步骤
+- [数据库备份设计](docs/migration/DATABASE_BACKUP_DESIGN.md) - 备份策略
+
+### 🔒 安全配置
+- [安全配置指南](docs/security/SECURITY_CONFIGURATION.md)
+- [安全实施报告](docs/security/SECURITY_IMPLEMENTATION_REPORT.md)
+- [安全快速参考](docs/security/SECURITY_QUICK_REFERENCE.md)
+
+### 🐛 问题排查
+- [已修复的 Bug](docs/bugs/) - 完整的问题分析和解决方案
+- [光标定位问题](docs/bugs/CURSOR_BUG_REPORT.md)
+- [跨设备同步问题](docs/bugs/CROSS_DEVICE_SYNC_FIX.md)
+
+### 💻 开发文档
+- [前端重构文档](docs/development/FRONTEND_REFACTOR.md)
+- [开发待办事项](docs/development/TODO)
+
+### 📖 用户指南
+- [进度保存功能使用指南](docs/user-guide/PROGRESS_USER_GUIDE.md)
 
 ---
 
-## 📦 服务架构
+## ⚙️ 环境配置
 
+### 环境变量（.env）
+```bash
+# 数据库配置
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=codecopy
+DB_PASSWORD=codecopy123
+DB_NAME=codecopybook
+
+# 存储配置（支持 local 或 s3）
+STORAGE_TYPE=local              # 本地存储
+# STORAGE_TYPE=s3               # S3 对象存储
+
+# S3 配置（使用 S3 时需要）
+S3_ENDPOINT=https://s3.bitiful.net
+S3_REGION=cn-east-1
+S3_ACCESS_KEY=your_access_key
+S3_SECRET_KEY=your_secret_key
+S3_BUCKET=codejym-uploads
+S3_BACKUP_BUCKET=codejym-backups
 ```
-┌─────────────────────────────────────────────────┐
-│                                                 │
-│  ┌──────────────┐      ┌──────────────┐        │
-│  │   浏览器      │──────▶   Nginx      │        │
-│  │              │      │  (反向代理)   │        │
-│  └──────────────┘      └──────┬───────┘        │
-│                                 │                │
-│                         ┌───────▼───────┐        │
-│                         │   应用服务     │        │
-│                         │ (codecopybook) │        │
-│                         └───────┬───────┘        │
-│                                 │                │
-│                         ┌───────▼───────┐        │
-│                         │  PostgreSQL   │        │
-│                         │    数据库      │        │
-│                         └────────────────┘        │
-│                                                 │
-│  端口：                                         │
-│    - 80:   Nginx                               │
-│    - 8080: 应用                                │
-│    - 5432: 数据库                              │
-└─────────────────────────────────────────────────┘
-```
+
+详细配置说明请参考 [.env.example](.env.example)
 
 ---
 
 ## 🔧 管理命令
 
-### 查看服务状态
+### Docker 服务管理
 ```bash
-docker compose -f docker-compose.proxy.yml ps
+# 查看服务状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f codecopybook    # 应用日志
+docker compose logs -f postgres        # 数据库日志
+
+# 重启服务
+docker compose restart
+
+# 停止服务
+docker compose down
+
+# 完全清理（删除所有数据）
+docker compose down -v
 ```
 
-### 查看日志
+### 数据库备份
 ```bash
-# 应用日志
-docker compose -f docker-compose.proxy.yml logs -f codecopybook
+# 备份到 S3
+./scripts/backup-db-to-s3.sh
 
-# 数据库日志
-docker compose -f docker-compose.proxy.yml logs -f postgres
-
-# Nginx 日志
-docker compose -f docker-compose.proxy.yml logs -f nginx
-```
-
-### 重启服务
-```bash
-docker compose -f docker-compose.proxy.yml restart
-```
-
-### 停止服务
-```bash
-docker compose -f docker-compose.proxy.yml down
-```
-
-### 完全清理（删除所有数据）
-```bash
-docker compose -f docker-compose.proxy.yml down -v
+# 从 S3 恢复
+./scripts/restore-db-from-s3.sh
 ```
 
 ---
 
-## 🌐 域名配置
+## 🏗️ 技术栈
 
-### DNS 设置
-```
-类型: A
-名称: @
-值: YOUR_SERVER_IP
-TTL: 600
+### 后端
+- **语言**：Go 1.21+
+- **Web 框架**：标准库 net/http
+- **数据库**：PostgreSQL 15
+- **存储**：本地文件系统 / S3 兼容对象存储
+- **容器化**：Docker + Docker Compose
 
-类型: A
-名称: www
-值: YOUR_SERVER_IP
-TTL: 600
-```
-
-### Nginx 配置
-已自动配置 jiezispace.com：
-- `nginx.conf` - Nginx 配置文件
-
-### 访问测试
-```bash
-# 测试本地访问
-curl http://localhost:8080
-
-# 测试 Nginx 代理
-curl http://localhost
-
-# 测试 API
-curl http://localhost/api/auth/me
-```
+### 前端
+- **框架**：React 18
+- **语言**：TypeScript
+- **构建工具**：Vite
+- **样式**：CSS Modules
 
 ---
 
-## 🔐 数据库信息
+## 📊 系统架构
 
-- **主机**：postgres
-- **端口**：5432
-- **数据库**：codecopybook
-- **用户名**：codecopy
-- **密码**：codecopy123
-
----
-
-## 📚 完整文档
-
-- `QUICK_START.md` - 快速开始指南
-- `DOMAIN_SETUP_JIEZISPACE.md` - 详细域名配置指南
-- `DEPLOYMENT_FIX.md` - 问题修复说明
-
----
-
-## ✅ 验证部署
-
-部署完成后，以下所有测试都应该通过：
-
-```bash
-# 1. 测试本地访问
-curl http://localhost:8080
-
-# 2. 测试 Nginx 代理
-curl http://localhost
-
-# 3. 测试 API
-curl http://localhost:8080/api/auth/me
-
-# 4. 检查服务状态
-docker compose -f docker-compose.proxy.yml ps
+```
+┌─────────────────────────────────────────────────┐
+│                    用户                          │
+│                     ↓                            │
+│              ┌──────────────┐                    │
+│              │    Nginx     │  (可选反向代理)    │
+│              │  Port: 80    │                    │
+│              └──────┬───────┘                    │
+│                     ↓                            │
+│              ┌──────────────┐                    │
+│              │  前端 (React) │                   │
+│              │  Port: 8080  │                    │
+│              └──────┬───────┘                    │
+│                     ↓                            │
+│              ┌──────────────┐                    │
+│              │ 后端 (Go API) │                   │
+│              │  Port: 8080  │                    │
+│              └──────┬───────┘                    │
+│                     ↓                            │
+│         ┌───────────┴──────────┐                 │
+│         ↓                      ↓                 │
+│  ┌─────────────┐      ┌────────────────┐        │
+│  │ PostgreSQL  │      │  文件存储      │        │
+│  │  Port: 5432 │      │ (Local / S3)   │        │
+│  └─────────────┘      └────────────────┘        │
+└─────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🎉 完成！
+## 🌟 核心特性
 
-你现在可以通过以下方式访问 CodeJYM：
+- ✅ **代码临摹练习** - 通过临摹代码提升编程能力
+- ✅ **语法高亮** - 支持 20+ 编程语言
+- ✅ **进度保存** - 自动保存练习进度
+- ✅ **文件管理** - 支持上传 ZIP、单文件、粘贴代码
+- ✅ **灵活存储** - 支持本地存储和 S3 对象存储
+- ✅ **自动备份** - 数据库定时备份到 S3
+- ✅ **跨设备同步** - 用户数据云端存储
 
-1. **本地**：http://localhost:8080
-2. **Nginx**：http://localhost
-3. **域名**：http://jiezispace.com（需要 DNS 配置）
+---
 
-享受你的代码学习平台！💻✨
+## 🔗 访问地址
+
+### 本地开发
+- 应用：http://localhost:8080
+- API：http://localhost:8080/api
+- 数据库：localhost:5432
+
+### 生产环境
+- 应用：http://jiezispace.com
+- API：http://jiezispace.com/api
+
+---
+
+## 🤝 贡献指南
+
+欢迎提交 Issue 和 Pull Request！
+
+详细开发文档请参考 [开发文档](docs/development/)
+
+---
+
+## 📄 许可证
+
+MIT License
+
+---
+
+## 📞 联系方式
+
+- 项目仓库：[GitHub](https://github.com/yourusername/CodeJym)
+- 问题反馈：[Issues](https://github.com/yourusername/CodeJym/issues)
+
+---
+
+**享受你的代码学习之旅！** 💻✨

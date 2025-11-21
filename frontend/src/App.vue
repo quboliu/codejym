@@ -119,7 +119,7 @@
         <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
           <div class="sidebar-section">
             <div class="section-header">
-              <h3 class="section-title">导入素材</h3>
+              <h3 class="section-title">导入训练素材</h3>
             </div>
             <div class="import-actions">
               <label class="btn btn-primary" style="width: 100%">
@@ -147,28 +147,51 @@
 
           <div class="sidebar-section">
             <div class="section-header">
-              <h3 class="section-title">素材库</h3>
-              <button class="btn-icon btn-icon-sm" @click="refreshAssets" :disabled="assetLoading">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'animate-spin': assetLoading }">
-                  <path d="M3 10C3 6.1 6.1 3 10 3C13.9 3 17 6.1 17 10M17 10L14 7M17 10L20 7M17 10C17 13.9 13.9 17 10 17C6.1 17 3 13.9 3 10M3 10L6 13M3 10L0 13" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
+              <h3 class="section-title">训练组</h3>
+              <div class="section-actions">
+                <button class="btn-icon btn-icon-sm" @click="handleCreateAssetClick" title="创建训练组">
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 4V16M4 10H16" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-icon-sm" @click="refreshAssets" :disabled="assetLoading" title="刷新">
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'animate-spin': assetLoading }">
+                    <path d="M3 10C3 6.1 6.1 3 10 3C13.9 3 17 6.1 17 10M17 10L14 7M17 10L20 7M17 10C17 13.9 13.9 17 10 17C6.1 17 3 13.9 3 10M3 10L6 13M3 10L0 13" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-icon-sm" @click="assetsExpanded = !assetsExpanded" :title="assetsExpanded ? '收起' : '展开'">
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" :style="{ transform: assetsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }">
+                    <path d="M5 8L10 13L15 8" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
             </div>
             <AssetList
+              v-show="assetsExpanded"
               :assets="assets"
               :selected-id="selectedAsset"
               @select="handleSelectAsset"
+              @rename="handleRenameAsset"
+              @delete="handleDeleteAsset"
             />
           </div>
 
           <div v-if="selectedAsset" class="sidebar-section">
             <div class="section-header">
               <h3 class="section-title">文件列表</h3>
+              <button class="btn-icon btn-icon-sm" @click="fileListExpanded = !fileListExpanded" :title="fileListExpanded ? '收起' : '展开'">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" :style="{ transform: fileListExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }">
+                  <path d="M5 8L10 13L15 8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </div>
             <FileTree
+              v-show="fileListExpanded"
               :nodes="tree"
               :active-path="selectedPath"
               @select="handleSelectFile"
+              @context-menu="handleFileContextMenu"
+              @create-folder="handleCreateFolderClick"
             />
           </div>
         </aside>
@@ -183,7 +206,7 @@
               </svg>
             </div>
             <h3>选择一个文件开始练习</h3>
-            <p class="text-secondary">从左侧选择一个素材和文件</p>
+            <p class="text-secondary">从左侧选择一个训练组和文件</p>
           </div>
 
           <div v-else class="workspace-content">
@@ -222,6 +245,7 @@
                 :content="fileContent"
                 :cursor="cursor"
                 :error-flash="flashError"
+                :background-opacity="backgroundOpacity"
               />
             </div>
 
@@ -231,6 +255,25 @@
                 <kbd>Backspace</kbd> 回退
                 <span class="divider">|</span>
                 <kbd>?</kbd> 帮助
+              </div>
+              <div class="opacity-control">
+                <label class="opacity-label">
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="10" cy="10" r="7" stroke-linecap="round"/>
+                    <path d="M10 3V10" stroke-linecap="round"/>
+                  </svg>
+                  <span>背景深度</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.2"
+                  max="0.8"
+                  step="0.1"
+                  :value="backgroundOpacity"
+                  @input="handleOpacityChange(parseFloat(($event.target as HTMLInputElement).value))"
+                  class="opacity-slider"
+                />
+                <span class="opacity-value">{{ Math.round(backgroundOpacity * 100) }}%</span>
               </div>
               <div class="action-buttons">
                 <button class="btn btn-ghost btn-sm" @click="skipCurrentLine" :disabled="!canSkipLine">
@@ -252,8 +295,11 @@
       title="粘贴代码"
       @confirm="handlePasteSubmit"
       @cancel="resetPasteForm"
-      :confirm-disabled="!pasteContent.trim()"
+      :confirm-disabled="!pasteContent.trim() || !selectedAsset"
     >
+      <div v-if="!selectedAsset" class="form-warning">
+        请先选择一个训练组
+      </div>
       <div class="form-group">
         <label for="paste-filename">文件名</label>
         <input
@@ -275,6 +321,103 @@
         ></textarea>
       </div>
     </Modal>
+
+    <!-- 创建训练组 Modal -->
+    <Modal
+      v-model="showCreateAssetModal"
+      title="创建训练组"
+      @confirm="submitCreateAsset"
+      @cancel="showCreateAssetModal = false"
+      :confirm-disabled="!createAssetName.trim()"
+      :confirm-loading="creatingAsset"
+    >
+      <div class="form-group">
+        <label for="create-asset-name">训练组名称</label>
+        <input
+          id="create-asset-name"
+          type="text"
+          class="input"
+          v-model="createAssetName"
+          placeholder="例如: Python 练习"
+          @keyup.enter="submitCreateAsset"
+        />
+      </div>
+    </Modal>
+
+    <!-- 重命名训练组 Modal -->
+    <Modal
+      v-model="showRenameAssetModal"
+      title="重命名训练组"
+      @confirm="submitRenameAsset"
+      @cancel="showRenameAssetModal = false"
+      :confirm-disabled="!renameAssetName.trim()"
+      :confirm-loading="renamingAsset"
+    >
+      <div class="form-group">
+        <label for="rename-asset-name">训练组名称</label>
+        <input
+          id="rename-asset-name"
+          type="text"
+          class="input"
+          v-model="renameAssetName"
+          placeholder="输入新的名称"
+          @keyup.enter="submitRenameAsset"
+        />
+      </div>
+    </Modal>
+
+    <!-- 创建文件夹 Modal -->
+    <Modal
+      v-model="showCreateFolderModal"
+      title="创建文件夹"
+      @confirm="submitCreateFolder"
+      @cancel="showCreateFolderModal = false"
+      :confirm-disabled="!createFolderPath.trim()"
+      :confirm-loading="creatingFolder"
+    >
+      <div class="form-group">
+        <label for="create-folder-path">文件夹路径</label>
+        <input
+          id="create-folder-path"
+          type="text"
+          class="input"
+          v-model="createFolderPath"
+          placeholder="例如: src/components"
+          @keyup.enter="submitCreateFolder"
+        />
+        <small class="form-hint">可以使用 / 创建多级目录</small>
+      </div>
+    </Modal>
+
+    <!-- 重命名文件/文件夹 Modal -->
+    <Modal
+      v-model="showRenameFileModal"
+      title="重命名"
+      @confirm="submitRenameFile"
+      @cancel="showRenameFileModal = false"
+      :confirm-disabled="!renameFileNewName.trim()"
+      :confirm-loading="renamingFile"
+    >
+      <div class="form-group">
+        <label for="rename-file-name">新名称</label>
+        <input
+          id="rename-file-name"
+          type="text"
+          class="input"
+          v-model="renameFileNewName"
+          placeholder="输入新名称"
+          @keyup.enter="submitRenameFile"
+        />
+      </div>
+    </Modal>
+
+    <!-- 右键菜单 -->
+    <ContextMenu
+      :visible="showContextMenu"
+      :position="contextMenuPosition"
+      :items="contextMenuItems"
+      @close="showContextMenu = false"
+    />
   </div>
 </template>
 
@@ -285,22 +428,30 @@ import FileTree from './components/FileTree.vue'
 import PracticeCanvas from './components/PracticeCanvas.vue'
 import Modal from './components/common/Modal.vue'
 import Toast from './components/common/Toast.vue'
+import ContextMenu, { type ContextMenuItem } from './components/common/ContextMenu.vue'
 import { useToast, toastRef as globalToastRef } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import {
+  createAsset,
+  createDirectory,
   createSession,
+  deleteAsset,
+  deleteFile,
   fetchCurrentUser,
   fetchFileContent,
   fetchFileTree,
   fetchSession,
   listAssets,
   login,
+  moveFile,
   patchSession,
   querySession,
+  renameAsset,
+  renameFile,
   setAuthToken,
   signup,
-  uploadAsset,
-  uploadPastedAsset,
+  uploadFileToAsset,
+  uploadPasteToAsset,
 } from './api'
 import type { Asset, FileNode, FileContent, Session, User } from './types'
 
@@ -315,6 +466,12 @@ function handleToggleTheme() {
   toggleTheme()
 }
 
+// 调整背景描红透明度
+function handleOpacityChange(value: number) {
+  backgroundOpacity.value = value
+  localStorage.setItem('backgroundOpacity', value.toString())
+}
+
 // 认证状态
 const user = ref<User | null>(null)
 const authMode = ref<'login' | 'signup'>('login')
@@ -326,6 +483,27 @@ const authLoading = ref(false)
 // UI状态
 const sidebarCollapsed = ref(false)
 const showPasteModal = ref(false)
+const showCreateAssetModal = ref(false)
+const createAssetName = ref('')
+const creatingAsset = ref(false)
+const showRenameAssetModal = ref(false)
+const renameAssetId = ref<string | null>(null)
+const renameAssetName = ref('')
+const renamingAsset = ref(false)
+const assetsExpanded = ref(true)
+const fileListExpanded = ref(true)
+
+// 文件操作状态
+const showContextMenu = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const contextMenuItems = ref<ContextMenuItem[]>([])
+const showCreateFolderModal = ref(false)
+const createFolderPath = ref('')
+const creatingFolder = ref(false)
+const showRenameFileModal = ref(false)
+const renameFilePath = ref('')
+const renameFileNewName = ref('')
+const renamingFile = ref(false)
 
 // 数据状态
 const assets = ref<Asset[]>([])
@@ -346,6 +524,9 @@ const uploading = ref(false)
 const pasting = ref(false)
 const pasteFilename = ref('')
 const pasteContent = ref('')
+
+// 背景描红透明度设置（默认0.5，范围0.2-0.8）
+const backgroundOpacity = ref(parseFloat(localStorage.getItem('backgroundOpacity') || '0.5'))
 
 // 计算属性
 const progress = computed(() => {
@@ -491,7 +672,7 @@ function resetState() {
   elapsedSeconds.value = 0
 }
 
-// 素材管理
+// 训练组管理
 async function refreshAssets() {
   if (!user.value) return
   assetLoading.value = true
@@ -514,12 +695,18 @@ async function handleUpload(event: Event) {
   const file = target.files?.[0]
   if (!file) return
 
+  // 检查是否选中了训练组
+  if (!selectedAsset.value) {
+    toast.error('请先选择一个训练组')
+    target.value = ''
+    return
+  }
+
   uploading.value = true
   try {
-    const created = await uploadAsset(file)
+    await uploadFileToAsset(selectedAsset.value, file)
     toast.success('上传成功')
-    await refreshAssets()
-    await handleSelectAsset(created.id)
+    await refreshFileTree()
   } catch (err) {
     toast.error((err as Error).message)
   } finally {
@@ -539,6 +726,12 @@ async function handlePasteSubmit() {
     return
   }
 
+  // 检查是否选中了训练组
+  if (!selectedAsset.value) {
+    toast.error('请先选择一个训练组')
+    return
+  }
+
   if (!pasteContent.value.trim()) {
     toast.error('请输入代码内容')
     return
@@ -548,12 +741,11 @@ async function handlePasteSubmit() {
 
   pasting.value = true
   try {
-    const created = await uploadPastedAsset(filename, pasteContent.value)
+    await uploadPasteToAsset(selectedAsset.value, filename, pasteContent.value)
     toast.success('代码已保存')
     showPasteModal.value = false
     resetPasteForm()
-    await refreshAssets()
-    await handleSelectAsset(created.id)
+    await refreshFileTree()
   } catch (err) {
     toast.error((err as Error).message)
   } finally {
@@ -582,6 +774,197 @@ async function handleSelectAsset(id: string) {
   }
 }
 
+function handleCreateAssetClick() {
+  createAssetName.value = ''
+  showCreateAssetModal.value = true
+}
+
+async function submitCreateAsset() {
+  if (!createAssetName.value.trim()) {
+    toast.error('请输入训练组名称')
+    return
+  }
+
+  creatingAsset.value = true
+  try {
+    const created = await createAsset(createAssetName.value.trim())
+    toast.success('训练组创建成功')
+    showCreateAssetModal.value = false
+    createAssetName.value = ''
+    await refreshAssets()
+    await handleSelectAsset(created.id)
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    creatingAsset.value = false
+  }
+}
+
+function handleRenameAsset(id: string) {
+  const asset = assets.value.find(a => a.id === id)
+  if (!asset) return
+
+  renameAssetId.value = id
+  renameAssetName.value = asset.name
+  showRenameAssetModal.value = true
+}
+
+async function submitRenameAsset() {
+  if (!renameAssetId.value || !renameAssetName.value.trim()) {
+    toast.error('请输入训练组名称')
+    return
+  }
+
+  renamingAsset.value = true
+  try {
+    await renameAsset(renameAssetId.value, renameAssetName.value.trim())
+    toast.success('重命名成功')
+    showRenameAssetModal.value = false
+    renameAssetId.value = null
+    renameAssetName.value = ''
+    await refreshAssets()
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    renamingAsset.value = false
+  }
+}
+
+async function handleDeleteAsset(id: string) {
+  const asset = assets.value.find(a => a.id === id)
+  if (!asset) return
+
+  if (!confirm(`确定要删除训练组"${asset.name}"吗？此操作不可恢复。`)) {
+    return
+  }
+
+  try {
+    await deleteAsset(id)
+    toast.success('删除成功')
+
+    // 如果删除的是当前选中的训练组，清空选择
+    if (selectedAsset.value === id) {
+      selectedAsset.value = null
+      selectedPath.value = null
+      fileContent.value = null
+      tree.value = []
+    }
+
+    await refreshAssets()
+  } catch (err) {
+    toast.error((err as Error).message)
+  }
+}
+
+// 文件操作处理
+function handleFileContextMenu(event: { node: FileNode; clientX: number; clientY: number }) {
+  if (!selectedAsset.value) return
+
+  const iconRename = `<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 3L17 3L17 9M16 4L9 11L6 14L3 14L3 11L6 8L13 1" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+  const iconDelete = `<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5H17M8 5V3H12V5M8 9V15M12 9V15M7 5H13L14 17H6L7 5Z" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+
+  contextMenuItems.value = [
+    {
+      label: '重命名',
+      icon: iconRename,
+      action: () => handleRenameFileClick(event.node),
+    },
+    {
+      label: '删除',
+      icon: iconDelete,
+      action: () => handleDeleteFileClick(event.node),
+      danger: true,
+    },
+  ]
+
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  showContextMenu.value = true
+}
+
+function handleCreateFolderClick() {
+  createFolderPath.value = ''
+  showCreateFolderModal.value = true
+}
+
+async function submitCreateFolder() {
+  if (!selectedAsset.value || !createFolderPath.value.trim()) return
+
+  creatingFolder.value = true
+  try {
+    await createDirectory(selectedAsset.value, createFolderPath.value.trim())
+    toast.success('文件夹创建成功')
+    showCreateFolderModal.value = false
+    createFolderPath.value = ''
+    await refreshFileTree()
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    creatingFolder.value = false
+  }
+}
+
+function handleRenameFileClick(node: FileNode) {
+  renameFilePath.value = node.path
+  renameFileNewName.value = node.name
+  showRenameFileModal.value = true
+}
+
+async function submitRenameFile() {
+  if (!selectedAsset.value || !renameFilePath.value || !renameFileNewName.value.trim()) return
+
+  renamingFile.value = true
+  try {
+    await renameFile(selectedAsset.value, renameFilePath.value, renameFileNewName.value.trim())
+    toast.success('重命名成功')
+    showRenameFileModal.value = false
+    renameFilePath.value = ''
+    renameFileNewName.value = ''
+    await refreshFileTree()
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    renamingFile.value = false
+  }
+}
+
+async function handleDeleteFileClick(node: FileNode) {
+  if (!selectedAsset.value) return
+
+  const itemType = node.isDir ? '文件夹' : '文件'
+  if (!confirm(`确定要删除${itemType}"${node.name}"吗？此操作不可恢复。`)) {
+    return
+  }
+
+  try {
+    await deleteFile(selectedAsset.value, node.path)
+    toast.success('删除成功')
+
+    // 如果删除的是当前选中的文件，清空选择
+    if (selectedPath.value === node.path) {
+      selectedPath.value = null
+      fileContent.value = null
+    }
+
+    await refreshFileTree()
+  } catch (err) {
+    toast.error((err as Error).message)
+  }
+}
+
+async function refreshFileTree() {
+  if (!selectedAsset.value) return
+
+  treeLoading.value = true
+  try {
+    const nodes = await fetchFileTree(selectedAsset.value)
+    tree.value = nodes
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    treeLoading.value = false
+  }
+}
+
 async function handleSelectFile(path: string) {
   if (!selectedAsset.value || !user.value) return
   selectedPath.value = path
@@ -591,10 +974,14 @@ async function handleSelectFile(path: string) {
     const sessionData = await ensureSession(selectedAsset.value, path)
 
     session.value = sessionData
-    cursor.value = Math.min(sessionData.cursor ?? 0, content.content.length)
     errors.value = sessionData.errors ?? 0
     elapsedSeconds.value = sessionData.durationSeconds ?? 0
     fileContent.value = content
+
+    // 设置cursor - 总是跳到第一个需要输入的字符
+    // 直接传递 content 避免响应式时序问题
+    const initialCursor = Math.min(sessionData.cursor ?? 0, content.content.length)
+    cursor.value = findNextNonCommentPositionDirect(initialCursor, content)
   } catch (err) {
     toast.error((err as Error).message)
   }
@@ -624,7 +1011,8 @@ function skipCurrentLine() {
 
   const newlineIndex = fileContent.value.content.indexOf('\n', cursor.value)
   const nextCursor = newlineIndex === -1 ? fileContent.value.content.length : newlineIndex + 1
-  cursor.value = nextCursor
+  // 跳过下一行开头的注释
+  cursor.value = findNextNonCommentPosition(nextCursor)
 }
 
 async function handleResetProgress() {
@@ -659,7 +1047,9 @@ function handleKeydown(event: KeyboardEvent) {
 
   if (event.key === 'Backspace') {
     event.preventDefault()
-    cursor.value = Math.max(0, cursor.value - 1)
+    // 向后移动光标，跳过注释
+    const newCursor = findPrevNonCommentPosition(cursor.value - 1)
+    cursor.value = Math.max(0, newCursor)
     return
   }
 
@@ -672,7 +1062,9 @@ function handleKeydown(event: KeyboardEvent) {
   const expected = fileContent.value.content.charAt(cursor.value)
 
   if (expected === char) {
-    cursor.value = Math.min(fileContent.value.content.length, cursor.value + 1)
+    // 匹配成功，向前移动光标，跳过注释
+    const newCursor = findNextNonCommentPosition(cursor.value + 1)
+    cursor.value = Math.min(fileContent.value.content.length, newCursor)
   } else {
     errors.value += 1
     flashError.value = true
@@ -680,6 +1072,53 @@ function handleKeydown(event: KeyboardEvent) {
       flashError.value = false
     }, 200)
   }
+}
+
+// 检查位置是否在注释范围内
+function isInCommentRange(pos: number): boolean {
+  if (!fileContent.value) return false
+  for (const range of fileContent.value.skipRanges) {
+    if (pos >= range.start && pos < range.end) {
+      return true
+    }
+  }
+  return false
+}
+
+// 直接检查位置是否在注释范围内（不依赖响应式状态）
+function isInCommentRangeDirect(pos: number, content: FileContent): boolean {
+  for (const range of content.skipRanges) {
+    if (pos >= range.start && pos < range.end) {
+      return true
+    }
+  }
+  return false
+}
+
+// 找到下一个非注释位置
+function findNextNonCommentPosition(pos: number): number {
+  if (!fileContent.value) return pos
+  while (pos < fileContent.value.content.length && isInCommentRange(pos)) {
+    pos++
+  }
+  return pos
+}
+
+// 直接找到下一个非注释位置（不依赖响应式状态）
+function findNextNonCommentPositionDirect(pos: number, content: FileContent): number {
+  while (pos < content.content.length && isInCommentRangeDirect(pos, content)) {
+    pos++
+  }
+  return pos
+}
+
+// 找到前一个非注释位置
+function findPrevNonCommentPosition(pos: number): number {
+  if (!fileContent.value) return pos
+  while (pos >= 0 && isInCommentRange(pos)) {
+    pos--
+  }
+  return Math.max(0, pos)
 }
 
 function mapKeyToChar(event: KeyboardEvent): string | null {
@@ -752,6 +1191,22 @@ function computeWPM(chars: number, seconds: number) {
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-text-primary);
+}
+
+.form-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin-top: -4px;
+}
+
+.form-warning {
+  padding: var(--space-sm);
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-md);
 }
 
 .auth-footer {
@@ -926,6 +1381,12 @@ function computeWPM(chars: number, seconds: number) {
   margin: 0;
 }
 
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
 .import-actions {
   display: flex;
   flex-direction: column;
@@ -1072,6 +1533,71 @@ function computeWPM(chars: number, seconds: number) {
 
 .divider {
   color: var(--color-border);
+}
+
+.opacity-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.opacity-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  cursor: default;
+}
+
+.opacity-slider {
+  width: 120px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--color-accent);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.opacity-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.opacity-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.opacity-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.opacity-value {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  min-width: 35px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .action-buttons {

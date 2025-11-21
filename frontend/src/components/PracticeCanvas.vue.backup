@@ -83,45 +83,7 @@ const displayContent = computed(() => {
     return false
   }
 
-  // 提取父元素的 hljs 相关 class
-  function getParentHljsClasses(node: Node): string {
-    const parent = node.parentNode as Element
-    if (!parent || !parent.className) return ''
-
-    // 只提取 hljs- 开头的 class
-    const classes = parent.className.split(' ')
-    const hljsClasses = classes.filter(cls => cls.startsWith('hljs-'))
-    return hljsClasses.join(' ')
-  }
-
   function processNode(node: Node): void {
-    // 优先处理元素节点
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const element = node as Element
-      const elementText = element.textContent || ''
-      const nodeStart = charCount
-      const nodeEnd = charCount + elementText.length
-
-      if (nodeEnd <= props.cursor) {
-        // 整个元素都是已完成 - 直接添加 class，保留原有高亮
-        element.classList.add('code-completed')
-        charCount += elementText.length
-        return  // 不递归子节点
-      } else if (nodeStart > props.cursor) {
-        // 整个元素都是未完成 - 直接添加 class，保留原有高亮
-        const inComment = isInCommentRange(nodeStart)
-        element.classList.add(inComment ? 'code-comment' : 'code-remaining')
-        charCount += elementText.length
-        return  // 不递归子节点
-      }
-
-      // 光标在元素中间，递归处理子节点
-      const children = Array.from(element.childNodes)
-      children.forEach(child => processNode(child))
-      return
-    }
-
-    // 处理文本节点
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent || ''
       const nodeStart = charCount
@@ -130,17 +92,15 @@ const displayContent = computed(() => {
       if (nodeEnd <= props.cursor) {
         // 整个节点都是已完成
         const span = document.createElement('span')
-        const hljsClasses = getParentHljsClasses(node)
-        span.className = hljsClasses ? `${hljsClasses} code-completed` : 'code-completed'
+        span.className = 'code-completed'
         span.textContent = text
         node.parentNode!.replaceChild(span, node)
       } else if (nodeStart > props.cursor) {
         // 整个节点都是未完成（光标在节点之前）
         const span = document.createElement('span')
-        const hljsClasses = getParentHljsClasses(node)
+        // 检查是否在注释中
         const inComment = isInCommentRange(nodeStart)
-        const statusClass = inComment ? 'code-comment' : 'code-remaining'
-        span.className = hljsClasses ? `${hljsClasses} ${statusClass}` : statusClass
+        span.className = inComment ? 'code-comment' : 'code-remaining'
         span.textContent = text
         node.parentNode!.replaceChild(span, node)
       } else if (!cursorInserted) {
@@ -150,20 +110,19 @@ const displayContent = computed(() => {
         const after = text.slice(offset)
 
         const parent = node.parentNode!
-        const hljsClasses = getParentHljsClasses(node)
 
-        // 创建新节点 - 保留语法高亮 class
+        // 创建新节点
         const completedSpan = document.createElement('span')
-        completedSpan.className = hljsClasses ? `${hljsClasses} code-completed` : 'code-completed'
+        completedSpan.className = 'code-completed'
         completedSpan.textContent = before
 
         const cursorSpan = document.createElement('span')
         cursorSpan.className = 'cursor-line'
 
         const remainingSpan = document.createElement('span')
+        // 检查after部分是否在注释中
         const inComment = isInCommentRange(props.cursor)
-        const statusClass = inComment ? 'code-comment' : 'code-remaining'
-        remainingSpan.className = hljsClasses ? `${hljsClasses} ${statusClass}` : statusClass
+        remainingSpan.className = inComment ? 'code-comment' : 'code-remaining'
         remainingSpan.textContent = after
 
         // 替换原节点
@@ -175,6 +134,10 @@ const displayContent = computed(() => {
       }
 
       charCount += text.length
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      // 递归处理子节点 - 需要先复制子节点列表，因为会修改DOM
+      const children = Array.from(node.childNodes)
+      children.forEach(child => processNode(child))
     }
   }
 
@@ -334,19 +297,8 @@ function displayChar(char: string) {
   background: transparent !important;
 }
 
-/* 已完成的代码 - 保留语法高亮，正常显示 */
+/* 已完成的代码 - 正常显示 */
 .code-foreground :deep(.code-completed) {
-  /* 不设置 color，让 hljs class 的颜色生效 */
-}
-
-/* 已完成的代码中的所有语法高亮元素 - 使用通配符匹配所有 hljs- class */
-.code-foreground :deep(.code-completed[class*="hljs-"]) {
-  /* 保持 hljs 原有的颜色，稍微降低亮度表示已完成 */
-  filter: brightness(0.9) !important;
-}
-
-/* 已完成但没有高亮的普通文本 */
-.code-foreground :deep(.code-completed:not([class*="hljs-"])) {
   color: var(--color-text-primary);
 }
 

@@ -1,0 +1,32 @@
+[Unit]
+Description=PostgreSQL Database Backup to S3
+After=network.target docker.service
+Documentation=file:///opt/codejym/scripts/BACKUP_README.md
+
+[Service]
+Type=oneshot
+User=codejym
+Group=docker
+WorkingDirectory=/opt/codejym
+ExecStart=/opt/codejym/scripts/run-backup.sh
+
+# 日志输出（可选择 journal 或文件）
+# 方案 1: 输出到 systemd journal (推荐，可用 journalctl 查看)
+StandardOutput=journal
+StandardError=journal
+
+# 方案 2: 输出到文件（与 cron 保持一致，取消下面的注释并注释上面两行）
+# StandardOutput=append:/opt/codejym/logs/pg-backup.log
+# StandardError=append:/opt/codejym/logs/pg-backup.log
+
+# 环境变量
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# 安全选项（可选，增强安全性）
+# PrivateTmp=yes
+# NoNewPrivileges=yes
+# ProtectSystem=strict
+# ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
