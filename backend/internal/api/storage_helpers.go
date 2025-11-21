@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -79,25 +80,43 @@ func buildTreeFromStorage(ctx context.Context, fileStorage storage.FileStorage, 
 		prefix += "/"
 	}
 
+	log.Printf("[DEBUG] buildTreeFromStorage: basePath=%s, rel=%s, prefix=%s", basePath, rel, prefix)
+
 	files, err := fileStorage.ListFiles(ctx, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
 
+	log.Printf("[DEBUG] ListFiles returned %d files", len(files))
+	if len(files) > 0 {
+		log.Printf("[DEBUG] First file: %s", files[0])
+	}
+
 	// 构建目录树结构
 	tree := buildFileTree(files, prefix)
+	log.Printf("[DEBUG] buildFileTree returned %d nodes", len(tree))
 	return tree, nil
 }
 
 // buildFileTree 从文件列表构建树形结构
 func buildFileTree(files []string, basePath string) []fileNode {
+	// 规范化 basePath：去掉前导 /，确保与 S3 返回的路径格式一致
+	basePath = strings.TrimPrefix(basePath, "/")
+
+	log.Printf("[DEBUG] buildFileTree: basePath=%s, files count=%d", basePath, len(files))
+
 	// 移除 basePath 前缀
 	relFiles := make([]string, 0, len(files))
 	for _, f := range files {
+		log.Printf("[DEBUG] Processing file: %s, hasPrefix(%s): %v", f, basePath, strings.HasPrefix(f, basePath))
 		if strings.HasPrefix(f, basePath) {
-			relFiles = append(relFiles, strings.TrimPrefix(f, basePath))
+			relPath := strings.TrimPrefix(f, basePath)
+			log.Printf("[DEBUG] Added relPath: %s", relPath)
+			relFiles = append(relFiles, relPath)
 		}
 	}
+
+	log.Printf("[DEBUG] relFiles count: %d", len(relFiles))
 
 	// 构建树形结构
 	root := make(map[string]*fileNode)
@@ -131,9 +150,9 @@ func buildFileTree(files []string, basePath string) []fileNode {
 
 	// 构建父子关系
 	nodes := make([]fileNode, 0)
-	for path, node := range root {
-		parentPath := filepath.Dir(path)
-		if parentPath == "." || parentPath == "" {
+	for nodePath, node := range root {
+		parentPath := path.Dir(nodePath)
+		if parentPath == "." || parentPath == "" || parentPath == "/" {
 			// 根级节点
 			nodes = append(nodes, *node)
 		} else if parent, exists := root[parentPath]; exists {

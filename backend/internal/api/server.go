@@ -1488,7 +1488,7 @@ func (s *Server) handleAssetUploadToExisting(user *storage.User, assetID string,
 		// 单文件上传
 		dstName := sanitizeFilename(header.Filename)
 		if dstName == "" {
-			dstName := fmt.Sprintf("file-%d", time.Now().Unix())
+			dstName = fmt.Sprintf("file-%d", time.Now().Unix())
 		}
 		storagePath := fmt.Sprintf("%s/%s", basePath, dstName)
 		contentType := detectContentTypeFromFilename(dstName)

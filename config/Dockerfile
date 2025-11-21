@@ -10,10 +10,15 @@ RUN npm install && npm run build
 
 FROM golang:1.24-alpine AS backend-build
 WORKDIR /app/backend
-COPY backend/go.mod ./
-COPY backend/go.sum ./
+# 安装 git（go mod download 需要）
+RUN apk add --no-cache git
+# 先拷贝 go.mod 和 go.sum
+COPY backend/go.mod backend/go.sum ./
+# 下载依赖
 RUN go mod download
+# 拷贝所有源代码
 COPY backend/ .
+# 构建
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
 
 FROM alpine:3.19
