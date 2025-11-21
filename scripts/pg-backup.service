@@ -1,0 +1,14 @@
+[Unit]
+Description=PostgreSQL Database Backup to S3
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+User=codejym
+WorkingDirectory=/opt/codejym
+ExecStart=/opt/codejym/scripts/run-backup.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

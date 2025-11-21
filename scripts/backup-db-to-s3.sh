@@ -16,11 +16,12 @@ PGDATABASE="${POSTGRES_DB:-codecopybook}"
 PGUSER="${POSTGRES_USER:-codecopy}"
 PGPASSWORD="${POSTGRES_PASSWORD:-codecopy123}"
 
-# S3 配置（从环境变量读取）
+# S3 配置
 S3_ENDPOINT="${S3_ENDPOINT:-https://s3.bitiful.net}"
-S3_REGION="${S3_REGION:-us-east-1}"
+S3_REGION="${S3_REGION:-cn-east-1}"
 S3_BUCKET="${S3_BACKUP_BUCKET:-codejym-backups}"
 S3_PREFIX="backups/database/full"
+AWS_PROFILE="${AWS_PROFILE:-bitiful}"
 
 export PGPASSWORD
 
@@ -36,11 +37,6 @@ error_exit() {
 
 # ==================== 主流程 ====================
 log "Starting database backup..."
-
-# 检查必要的环境变量
-if [[ -z "${S3_ACCESS_KEY:-}" ]] || [[ -z "${S3_SECRET_KEY:-}" ]]; then
-    error_exit "S3_ACCESS_KEY and S3_SECRET_KEY must be set"
-fi
 
 # 创建备份目录
 mkdir -p "$BACKUP_DIR"
@@ -61,12 +57,11 @@ log "Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
 
 # 上传到 S3
 log "Uploading to S3: s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}"
-if ! AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY}" \
-     AWS_SECRET_ACCESS_KEY="${S3_SECRET_KEY}" \
-     aws s3 cp "${BACKUP_DIR}/${BACKUP_FILE}" \
-         "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}" \
-         --endpoint-url "${S3_ENDPOINT}" \
-         --region "${S3_REGION}"; then
+if ! aws s3 cp "${BACKUP_DIR}/${BACKUP_FILE}" \
+        "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}" \
+        --endpoint-url "${S3_ENDPOINT}" \
+        --region "${S3_REGION}" \
+        --profile "${AWS_PROFILE}"; then
     error_exit "S3 upload failed"
 fi
 
@@ -80,11 +75,10 @@ log "Local backup file removed"
 log "Cleaning up old backups (retention: ${RETENTION_DAYS} days)..."
 CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
 
-AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY}" \
-AWS_SECRET_ACCESS_KEY="${S3_SECRET_KEY}" \
 aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" \
     --endpoint-url "${S3_ENDPOINT}" \
     --region "${S3_REGION}" \
+    --profile "${AWS_PROFILE}" \
     | awk '{print $4}' \
     | grep -E '^codecopybook_[0-9]{8}_' \
     | while read -r file; do
@@ -97,11 +91,10 @@ aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" \
 
         if [[ -n "$file_date" ]] && [[ "$file_date" -lt "$CUTOFF_DATE" ]]; then
             log "Deleting old backup: $file (date: $file_date)"
-            AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY}" \
-            AWS_SECRET_ACCESS_KEY="${S3_SECRET_KEY}" \
             aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${file}" \
                 --endpoint-url "${S3_ENDPOINT}" \
-                --region "${S3_REGION}" || true
+                --region "${S3_REGION}" \
+                --profile "${AWS_PROFILE}" || true
         fi
     done
 
