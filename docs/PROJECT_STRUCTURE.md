@@ -13,10 +13,10 @@ CodeJYM 项目采用清晰的模块化目录结构，便于开发、维护和文
 
 | 指标 | 整理前 | 整理后 | 改进 |
 |------|--------|--------|------|
-| 根目录文件数 | 35+ | 14 | ⬇️ 60% |
+| 根目录文件数 | 35+ | 8 | ⬇️ 77% |
 | 文档组织方式 | 散落 | 分类存放 | ✅ |
 | 脚本管理 | 混乱 | 集中管理 | ✅ |
-| 配置备份 | 无 | 统一备份 | ✅ |
+| 配置文件管理 | 混乱 | 统一存放 config/ | ✅ |
 
 ---
 
@@ -54,13 +54,13 @@ CodeJym/
 │   ├── verify_progress_save.sh     # 验证进度保存
 │   └── verify_security.sh          # 验证安全配置
 │
-├── config/                 # ⚙️ 配置文件备份（6个）
+├── config/                 # ⚙️ 配置文件中心（6个）
 │   ├── docker-compose.yml          # Docker Compose 主配置
-│   ├── docker-compose.proxy.yml    # 代理配置
-│   ├── Dockerfile                  # Docker 镜像配置
-│   ├── Caddyfile                   # Caddy 配置
-│   ├── nginx.conf                  # Nginx 配置
-│   └── .env.example                # 环境变量模板
+│   ├── docker-compose.proxy.yml    # 生产环境配置（含 Nginx）
+│   ├── Dockerfile                  # Docker 镜像构建配置
+│   ├── Caddyfile                   # Caddy 反向代理配置
+│   ├── nginx.conf                  # Nginx 反向代理配置
+│   └── .env.example                # 环境变量配置模板
 │
 ├── data/                   # 📦 持久化数据（git ignore）
 │   ├── uploads/            # 用户上传的文件
@@ -70,13 +70,9 @@ CodeJym/
 │
 ├── bin/                    # 🔨 编译输出
 │
-├── .env                    # 环境变量（敏感文件，git ignore）
+├── .env                    # 环境变量配置（敏感文件，git ignore）
 ├── .gitignore              # Git 忽略配置
-├── README.md               # 项目主文档
-├── docker-compose.yml      # Docker Compose 配置
-├── Dockerfile              # Docker 镜像配置
-├── Caddyfile               # Caddy 配置
-└── nginx.conf              # Nginx 配置
+└── README.md               # 项目主文档
 ```
 
 ---
