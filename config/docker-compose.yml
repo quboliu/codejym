@@ -18,11 +18,25 @@ services:
       retries: 5
       start_period: 30s
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   codecopybook:
     build: .
     image: codecopybook:local
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "${PORT:-8080}:8080"
@@ -30,6 +44,9 @@ services:
       - DATA_DIR=/data
       - FRONTEND_DIR=/app/frontend
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-codecopy}:${POSTGRES_PASSWORD:-codecopy}@postgres:5432/${POSTGRES_DB:-codecopybook}?sslmode=disable}
+      # Redis 进度写回缓冲（T1）。留空则退回直连 DB
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
+      - DB_MAX_CONNS=${DB_MAX_CONNS:-50}
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me}
       # Token 超时时间配置（可选）
       # 格式：30m(30分钟), 24h(24小时), 7d(7天)
@@ -52,3 +69,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

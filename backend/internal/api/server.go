@@ -30,7 +30,11 @@ type Server struct {
 	logger     *log.Logger
 	authSecret []byte
 	authTTL    time.Duration
+	cache      *ProgressCache // 可选：进度写回缓冲；为 nil 时直连 DB（可降级）
 }
+
+// SetProgressCache 启用 Redis 进度写回缓冲（T1）。nil 时保持直连 DB。
+func (s *Server) SetProgressCache(c *ProgressCache) { s.cache = c }
 
 type userContextKey struct{}
 
@@ -661,7 +665,13 @@ func (s *Server) querySession(user *storage.User, w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "assetId and path query parameters are required")
 		return
 	}
-	session, err := s.store.GetSessionByAssetAndPath(r.Context(), user.ID, assetID, path)
+	var session *storage.Session
+	var err error
+	if s.cache != nil {
+		session, err = s.cache.GetByAssetPath(r.Context(), user.ID, assetID, path)
+	} else {
+		session, err = s.store.GetSessionByAssetAndPath(r.Context(), user.ID, assetID, path)
+	}
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "session not found")
@@ -717,11 +727,20 @@ func (s *Server) createSession(user *storage.User, w http.ResponseWriter, r *htt
 		writeError(w, http.StatusInternalServerError, "failed to save session")
 		return
 	}
+	if s.cache != nil {
+		_ = s.cache.Seed(r.Context(), session) // 预热缓存；失败不致命（读时会回源）
+	}
 	writeJSON(w, http.StatusCreated, session)
 }
 
 func (s *Server) getSession(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
-	session, err := s.store.GetSession(r.Context(), user.ID, id)
+	var session *storage.Session
+	var err error
+	if s.cache != nil {
+		session, err = s.cache.Get(r.Context(), user.ID, id)
+	} else {
+		session, err = s.store.GetSession(r.Context(), user.ID, id)
+	}
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "session not found")
@@ -743,8 +762,14 @@ func (s *Server) updateSession(user *storage.User, id string, w http.ResponseWri
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	// 单次往返完成部分更新（替代 GetSession + UpdateSession 两次查询）
-	session, err := s.store.UpdateSessionFields(r.Context(), user.ID, id, payload.Cursor, payload.Errors, payload.DurationSeconds)
+	// 热路径：有 Redis 缓冲则只写 Redis（异步批量落库）；否则单条 UPDATE 直连 DB
+	var session *storage.Session
+	var err error
+	if s.cache != nil {
+		session, err = s.cache.Update(r.Context(), user.ID, id, payload.Cursor, payload.Errors, payload.DurationSeconds)
+	} else {
+		session, err = s.store.UpdateSessionFields(r.Context(), user.ID, id, payload.Cursor, payload.Errors, payload.DurationSeconds)
+	}
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "session not found")

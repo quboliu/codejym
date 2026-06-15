@@ -6,12 +6,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"codecopybook/internal/api"
 	"codecopybook/internal/storage"
@@ -94,6 +97,30 @@ func main() {
 	}
 
 	server := api.NewServer(store, log.New(os.Stdout, "[codecopybook] ", log.LstdFlags), []byte(*authSecret))
+
+	// Redis 进度写回缓冲（T1，可选）：未配置 REDIS_ADDR 时退回直连 DB（可降级）
+	if redisAddr := envOr("REDIS_ADDR", ""); redisAddr != "" {
+		rdb := redis.NewClient(&redis.Options{Addr: redisAddr, Password: envOr("REDIS_PASSWORD", "")})
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			log.Fatalf("failed to connect to redis: %v", err)
+		}
+		pc := api.NewProgressCache(rdb, store)
+		server.SetProgressCache(pc)
+		pc.StartFlusher(ctx, log.Default())
+		log.Printf("progress write-back cache enabled (redis=%s)", redisAddr)
+		// 优雅关闭：收到 SIGTERM/SIGINT 时把脏会话落库再退出，避免丢最后一批进度
+		go func() {
+			sigc := make(chan os.Signal, 1)
+			signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
+			<-sigc
+			fctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			n, _ := pc.FlushAll(fctx)
+			log.Printf("graceful shutdown: flushed %d sessions to db", n)
+			os.Exit(0)
+		}()
+	}
+
 	handler := server.Handler()
 
 	if frontendDir := envOr("FRONTEND_DIR", ""); frontendDir != "" {

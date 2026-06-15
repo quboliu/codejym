@@ -335,6 +335,35 @@ func (s *Storage) UpdateSessionFields(ctx context.Context, userID, sessionID str
 	return sess, nil
 }
 
+// BatchUpsertSessions 批量写入会话进度（供 Redis flusher 周期性落库）。
+// 用 pgx.Batch 一次往返提交多条 UPSERT，把「每人每 1.2s 一写」合并成「每实例每几秒一批」。
+func (s *Storage) BatchUpsertSessions(ctx context.Context, sessions []*Session) error {
+	if len(sessions) == 0 {
+		return nil
+	}
+	batch := &pgx.Batch{}
+	for _, ss := range sessions {
+		batch.Queue(
+			`INSERT INTO typing_sessions (id, user_id, asset_id, rel_path, cursor, errors, duration_seconds, created_at, updated_at)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+			 ON CONFLICT (id) DO UPDATE SET
+			   cursor = EXCLUDED.cursor,
+			   errors = EXCLUDED.errors,
+			   duration_seconds = EXCLUDED.duration_seconds,
+			   updated_at = now()`,
+			ss.ID, ss.UserID, ss.AssetID, ss.RelPath, ss.Cursor, ss.Errors, ss.DurationSeconds, ss.CreatedAt,
+		)
+	}
+	br := s.db.SendBatch(ctx, batch)
+	defer br.Close()
+	for range sessions {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func RandomID() (string, error) {
 	var b [10]byte
 	if _, err := io.ReadFull(rand.Reader, b[:]); err != nil {
