@@ -311,6 +311,30 @@ func (s *Storage) UpdateSession(ctx context.Context, session *Session) error {
 	return nil
 }
 
+// UpdateSessionFields 在单次数据库往返内完成进度的部分更新（nil = 该字段不变）并返回更新后的会话。
+// 替代原先「GetSession 再 UpdateSession」两次查询，是进度保存热路径的关键优化。
+func (s *Storage) UpdateSessionFields(ctx context.Context, userID, sessionID string, cursor, errs, duration *int) (*Session, error) {
+	sess := &Session{}
+	err := s.db.QueryRow(
+		ctx,
+		`UPDATE typing_sessions
+		 SET cursor = COALESCE($1, cursor),
+		     errors = COALESCE($2, errors),
+		     duration_seconds = COALESCE($3, duration_seconds),
+		     updated_at = now()
+		 WHERE id = $4 AND user_id = $5
+		 RETURNING id, user_id, asset_id, rel_path, cursor, errors, duration_seconds, created_at, updated_at`,
+		cursor, errs, duration, sessionID, userID,
+	).Scan(&sess.ID, &sess.UserID, &sess.AssetID, &sess.RelPath, &sess.Cursor, &sess.Errors, &sess.DurationSeconds, &sess.CreatedAt, &sess.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return sess, nil
+}
+
 func RandomID() (string, error) {
 	var b [10]byte
 	if _, err := io.ReadFull(rand.Reader, b[:]); err != nil {

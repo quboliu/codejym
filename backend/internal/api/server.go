@@ -141,7 +141,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		s.logger.Printf("warning: failed to create default asset for user %s: %v", user.ID, err)
 	}
 
-	token, err := s.issueToken(user.ID)
+	token, err := s.issueToken(user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to issue token")
 		return
@@ -185,7 +185,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	token, err := s.issueToken(user.ID)
+	token, err := s.issueToken(user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to issue token")
 		return
@@ -280,6 +280,9 @@ func (s *Server) createAsset(user *storage.User, w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, toAssetDTO(asset))
 }
 
+// maxUploadBytes 上传请求体的硬上限（防止超大上传打满磁盘/内存）。
+const maxUploadBytes = 64 << 20 // 64MB
+
 func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -289,7 +292,8 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if err := r.ParseMultipartForm(50 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid multipart form")
 		return
 	}
@@ -723,15 +727,6 @@ func (s *Server) getSession(user *storage.User, id string, w http.ResponseWriter
 }
 
 func (s *Server) updateSession(user *storage.User, id string, w http.ResponseWriter, r *http.Request) {
-	session, err := s.store.GetSession(r.Context(), user.ID, id)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "session not found")
-		} else {
-			writeError(w, http.StatusInternalServerError, "failed to load session")
-		}
-		return
-	}
 	var payload struct {
 		Cursor          *int `json:"cursor"`
 		Errors          *int `json:"errors"`
@@ -741,17 +736,14 @@ func (s *Server) updateSession(user *storage.User, id string, w http.ResponseWri
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if payload.Cursor != nil {
-		session.Cursor = *payload.Cursor
-	}
-	if payload.Errors != nil {
-		session.Errors = *payload.Errors
-	}
-	if payload.DurationSeconds != nil {
-		session.DurationSeconds = *payload.DurationSeconds
-	}
-	if err := s.store.UpdateSession(r.Context(), session); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update session")
+	// 单次往返完成部分更新（替代 GetSession + UpdateSession 两次查询）
+	session, err := s.store.UpdateSessionFields(r.Context(), user.ID, id, payload.Cursor, payload.Errors, payload.DurationSeconds)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "session not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to update session")
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, session)
@@ -906,56 +898,59 @@ func (s *Server) withAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "missing authorization")
 			return
 		}
-		userID, err := s.parseToken(strings.TrimSpace(parts[1]))
+		user, err := s.parseToken(strings.TrimSpace(parts[1]))
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
-		user, err := s.store.GetUserByID(r.Context(), userID)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusUnauthorized, "invalid token")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to load user")
-			}
-			return
-		}
-		ctxUser := *user
-		ctxUser.PasswordHash = ""
-		ctx := context.WithValue(r.Context(), userContextKey{}, &ctxUser)
+		// 身份信息来自已签名的 JWT，无需查库（无状态鉴权）
+		ctx := context.WithValue(r.Context(), userContextKey{}, user)
 		next(w, r.WithContext(ctx))
 	}
 }
 
-func (s *Server) issueToken(userID string) (string, error) {
+// authClaims 在 JWT 中携带身份信息（email/name），使鉴权变为无状态：
+// withAuth 不再每个请求都查 user 表（进度保存热路径少一次 DB 往返）。
+// 代价：用户改名后旧 token 内的 name 会陈旧到过期为止（可接受）。
+type authClaims struct {
+	Email string `json:"email,omitempty"`
+	Name  string `json:"name,omitempty"`
+	jwt.RegisteredClaims
+}
+
+func (s *Server) issueToken(u *storage.User) (string, error) {
 	if len(s.authSecret) == 0 {
 		return "", errors.New("auth secret not configured")
 	}
 	now := time.Now()
-	claims := jwt.RegisteredClaims{
-		Subject:   userID,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(s.authTTL)),
+	claims := authClaims{
+		Email: u.Email,
+		Name:  u.Name,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   u.ID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(s.authTTL)),
+		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.authSecret)
 }
 
-func (s *Server) parseToken(tokenStr string) (string, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+func (s *Server) parseToken(tokenStr string) (*storage.User, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &authClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method %v", token.Header["alg"])
 		}
 		return s.authSecret, nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
-	if !ok || !token.Valid {
-		return "", errors.New("invalid token")
+	claims, ok := token.Claims.(*authClaims)
+	if !ok || !token.Valid || claims.Subject == "" {
+		return nil, errors.New("invalid token")
 	}
-	return claims.Subject, nil
+	return &storage.User{ID: claims.Subject, Email: claims.Email, Name: claims.Name}, nil
 }
 
 func currentUser(r *http.Request) *storage.User {
@@ -1440,7 +1435,8 @@ func (s *Server) handleAssetUploadToExisting(user *storage.User, assetID string,
 		return
 	}
 
-	if err := r.ParseMultipartForm(50 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid multipart form")
 		return
 	}

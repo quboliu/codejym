@@ -28,6 +28,22 @@ func extractZipToStorage(ctx context.Context, f *os.File, fileStorage storage.Fi
 		return err
 	}
 
+	// 解压配额：防止 zip 炸弹 / 海量小文件耗尽磁盘
+	const (
+		maxZipEntries          = 10000
+		maxZipUncompressedSize = 256 << 20 // 256MB
+	)
+	if len(reader.File) > maxZipEntries {
+		return fmt.Errorf("zip 文件数超过上限 (%d)", maxZipEntries)
+	}
+	var declared uint64
+	for _, zf := range reader.File {
+		declared += zf.UncompressedSize64
+	}
+	if declared > maxZipUncompressedSize {
+		return fmt.Errorf("zip 解压后体积超过上限 (%dMB)", maxZipUncompressedSize>>20)
+	}
+
 	for _, zipFile := range reader.File {
 		rel := sanitizeZipPath(zipFile.Name)
 		if rel == "" {

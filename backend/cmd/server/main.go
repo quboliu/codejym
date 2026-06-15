@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -30,11 +32,21 @@ func main() {
 	}
 
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, *dbURL)
+	poolCfg, err := pgxpool.ParseConfig(*dbURL)
+	if err != nil {
+		log.Fatalf("invalid DATABASE_URL: %v", err)
+	}
+	// 连接池容量。原先用 pgxpool 默认值 max(4, CPU 数)≈8，是进度保存并发的主要瓶颈。
+	poolCfg.MaxConns = int32(envInt("DB_MAX_CONNS", 50))
+	poolCfg.MinConns = int32(envInt("DB_MIN_CONNS", 5))
+	poolCfg.MaxConnLifetime = time.Hour
+	poolCfg.MaxConnIdleTime = 30 * time.Minute
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %v", err)
 	}
 	defer pool.Close()
+	log.Printf("postgres pool configured: max_conns=%d min_conns=%d", poolCfg.MaxConns, poolCfg.MinConns)
 
 	// 初始化文件存储（本地或 S3）
 	var fileStorage storage.FileStorage
@@ -102,6 +114,15 @@ func main() {
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
 	}
 	return fallback
 }
