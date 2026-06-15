@@ -48,6 +48,9 @@ services:
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
       - DB_MAX_CONNS=${DB_MAX_CONNS:-50}
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me}
+      # 演示账号：前端预填 + 启动自动 seed，免注册直接登录
+      - DEMO_EMAIL=${DEMO_EMAIL:-demo@codejym.dev}
+      - DEMO_PASSWORD=${DEMO_PASSWORD:-demo1234}
       # Token 超时时间配置（可选）
       # 格式：30m(30分钟), 24h(24小时), 7d(7天)
       # 未配置时默认为 24 小时

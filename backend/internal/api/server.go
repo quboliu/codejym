@@ -1627,6 +1627,39 @@ func isValidRelPath(relPath string) bool {
 	return true
 }
 
+// SeedDemoUser 幂等地确保演示账号存在（含默认训练组），用于「前端预填、免注册直接登录」。
+// 仅当配置了 DEMO_EMAIL 时由 main 在启动时调用；DB 重置后也会自动重建。
+func (s *Server) SeedDemoUser(ctx context.Context, email, password, name string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" || len(password) < 6 {
+		return fmt.Errorf("demo credentials invalid (email empty or password < 6 chars)")
+	}
+	if _, err := s.store.GetUserByEmail(ctx, email); err == nil {
+		return nil // 已存在
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return err
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	userID, err := storage.RandomID()
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		name = "Demo"
+	}
+	user := &storage.User{ID: userID, Email: email, Name: name, PasswordHash: string(hashed)}
+	if err := s.store.CreateUser(ctx, user); err != nil {
+		if storage.IsDuplicate(err) {
+			return nil // 并发下已被创建
+		}
+		return err
+	}
+	return s.createDefaultAsset(ctx, user.ID)
+}
+
 // createDefaultAsset 为新用户创建默认训练组
 func (s *Server) createDefaultAsset(ctx context.Context, userID string) error {
 	assetID, err := storage.RandomID()

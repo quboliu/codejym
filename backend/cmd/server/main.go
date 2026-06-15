@@ -98,6 +98,15 @@ func main() {
 
 	server := api.NewServer(store, log.New(os.Stdout, "[codecopybook] ", log.LstdFlags), []byte(*authSecret))
 
+	// 预置演示账号（可选）：配置 DEMO_EMAIL 后，前端可预填、免注册直接登录；DB 重置后自动重建
+	if demoEmail := envOr("DEMO_EMAIL", ""); demoEmail != "" {
+		if err := server.SeedDemoUser(ctx, demoEmail, envOr("DEMO_PASSWORD", "demo1234"), envOr("DEMO_NAME", "Demo")); err != nil {
+			log.Printf("warning: failed to seed demo user: %v", err)
+		} else {
+			log.Printf("demo user ready: %s", demoEmail)
+		}
+	}
+
 	// Redis 进度写回缓冲（T1，可选）：未配置 REDIS_ADDR 时退回直连 DB（可降级）
 	if redisAddr := envOr("REDIS_ADDR", ""); redisAddr != "" {
 		rdb := redis.NewClient(&redis.Options{Addr: redisAddr, Password: envOr("REDIS_PASSWORD", "")})

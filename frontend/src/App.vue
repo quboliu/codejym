@@ -491,8 +491,9 @@ const user = ref<User | null>(null)
 // 未登录时的视图：'landing' 首页 / 'auth' 登录注册
 const view = ref<'landing' | 'auth'>('landing')
 const authMode = ref<'login' | 'signup'>('login')
-const authEmail = ref('')
-const authPassword = ref('')
+// 预填演示账号，方便测试免注册直接登录（后端启动时会 seed 同一账号）
+const authEmail = ref('demo@codejym.dev')
+const authPassword = ref('demo1234')
 const authName = ref('')
 const authLoading = ref(false)
 
