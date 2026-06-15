@@ -3,12 +3,23 @@
     <!-- Toast 通知 -->
     <Toast ref="toastComponentRef" />
 
+    <!-- 首页 / Landing -->
+    <LandingPage
+      v-if="!user && view === 'landing'"
+      @login="enterAuth('login')"
+      @signup="enterAuth('signup')"
+    />
+
     <!-- 登录页 -->
-    <div v-if="!user" class="auth-page">
+    <div v-else-if="!user" class="auth-page">
       <div class="auth-container">
         <div class="auth-header">
-          <h1>CodeJYM</h1>
-          <p class="text-secondary">代码临摹，刻意练习</p>
+          <button type="button" class="auth-back" @click="view = 'landing'">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l-5 5 5 5"/></svg>
+            返回首页
+          </button>
+          <div class="auth-brand"><BrandLogo :size="32" wordmark-size="1.5rem" /></div>
+          <p class="text-secondary auth-tagline">代码临摹，刻意练习</p>
         </div>
 
         <form class="auth-form" @submit.prevent="handleAuthSubmit">
@@ -74,7 +85,7 @@
               <path d="M3 7H17M3 13H17"/>
             </svg>
           </button>
-          <h1 class="app-title">CodeJYM</h1>
+          <BrandLogo :size="22" wordmark-size="1.2rem" class="app-title" />
         </div>
 
         <div class="header-right">
@@ -429,6 +440,8 @@ import PracticeCanvas from './components/PracticeCanvas.vue'
 import Modal from './components/common/Modal.vue'
 import Toast from './components/common/Toast.vue'
 import ContextMenu, { type ContextMenuItem } from './components/common/ContextMenu.vue'
+import BrandLogo from './components/BrandLogo.vue'
+import LandingPage from './components/LandingPage.vue'
 import { useToast, toastRef as globalToastRef } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import {
@@ -474,11 +487,18 @@ function handleOpacityChange(value: number) {
 
 // 认证状态
 const user = ref<User | null>(null)
+// 未登录时的视图：'landing' 首页 / 'auth' 登录注册
+const view = ref<'landing' | 'auth'>('landing')
 const authMode = ref<'login' | 'signup'>('login')
 const authEmail = ref('')
 const authPassword = ref('')
 const authName = ref('')
 const authLoading = ref(false)
+
+function enterAuth(mode: 'login' | 'signup') {
+  authMode.value = mode
+  view.value = 'auth'
+}
 
 // UI状态
 const sidebarCollapsed = ref(false)
@@ -657,6 +677,7 @@ function handleLogout() {
   localStorage.removeItem(AUTH_TOKEN_KEY)
   setAuthToken(null)
   user.value = null
+  view.value = 'landing'
   toast.info('已退出登录')
 }
 
@@ -1164,14 +1185,43 @@ function computeWPM(chars: number, seconds: number) {
 }
 
 .auth-header {
+  position: relative;
   text-align: center;
   margin-bottom: var(--space-xl);
 }
 
-.auth-header h1 {
-  font-size: var(--font-size-3xl);
+.auth-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-xs) var(--space-sm);
+  margin: calc(-1 * var(--space-xs)) 0 0 calc(-1 * var(--space-sm));
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.auth-back:hover {
+  color: var(--color-text-primary);
+  background: var(--color-accent-subtle);
+}
+
+.auth-brand {
+  display: flex;
+  justify-content: center;
   margin-bottom: var(--space-sm);
-  letter-spacing: -0.02em;
+  padding-top: var(--space-lg);
+}
+
+.auth-tagline {
+  font-size: var(--font-size-sm);
 }
 
 .auth-form {
