@@ -1,0 +1,82 @@
+# 横向扩展部署（T2）：N 个无状态 app 副本 + nginx 负载均衡。
+#
+# app 已无状态：鉴权用 JWT、进度在 Redis、元数据在 Postgres；本地文件用共享
+# bind-mount（单机多副本即可共享）。真·多机部署请设 STORAGE_TYPE=s3（已支持）。
+#
+# 用法（在仓库根目录）：
+#   PORT=8081 AUTH_SECRET=... \
+#   docker compose -f config/docker-compose.scale.yml --project-directory . \
+#       up -d --no-build --scale codecopybook=3
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-codecopy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codecopy}
+      POSTGRES_DB: ${POSTGRES_DB:-codecopybook}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  codecopybook:
+    image: codecopybook:local
+    # 不映射宿主端口——多副本会端口冲突；仅在内网暴露 8080，由 nginx 统一入口
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATA_DIR=/data
+      - FRONTEND_DIR=/app/frontend
+      - DATABASE_URL=postgres://${POSTGRES_USER:-codecopy}:${POSTGRES_PASSWORD:-codecopy}@postgres:5432/${POSTGRES_DB:-codecopybook}?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - DB_MAX_CONNS=${DB_MAX_CONNS:-25}
+      # 所有副本必须共用同一 AUTH_SECRET，否则一个副本签发的 JWT 在另一个副本失效
+      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me}
+      - STORAGE_TYPE=${STORAGE_TYPE:-local}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_URL_PREFIX=${S3_URL_PREFIX}
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - codecopybook
+    ports:
+      - "${PORT:-8081}:80"
+    volumes:
+      - ./config/nginx-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

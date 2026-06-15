@@ -89,8 +89,11 @@ func (s *Server) Handler() http.Handler {
 	return handler
 }
 
+// serverHostname 在多副本部署下用于观测请求落到了哪个实例（容器主机名各不相同）。
+var serverHostname, _ = os.Hostname()
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "host": serverHostname})
 }
 
 func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
