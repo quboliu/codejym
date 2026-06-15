@@ -104,69 +104,67 @@ func buildTreeFromStorage(ctx context.Context, fileStorage storage.FileStorage, 
 	return buildFileTree(files, prefix), nil
 }
 
-// buildFileTree 从文件列表构建树形结构
+// buildFileTree 从扁平文件列表构建树形结构。
+// 用指针树一次性建好父子关系（顺序无关），最后再递归转成值类型——
+// 避免旧实现「在 map 随机遍历中按值拷贝节点」导致父目录先被拷贝、子节点丢失的 bug。
 func buildFileTree(files []string, basePath string) []fileNode {
-	// 规范化 basePath：去掉前导 /，确保与 S3 返回的路径格式一致
 	basePath = strings.TrimPrefix(basePath, "/")
 
-	// 移除 basePath 前缀
-	relFiles := make([]string, 0, len(files))
-	for _, f := range files {
-		if strings.HasPrefix(f, basePath) {
-			relPath := strings.TrimPrefix(f, basePath)
-			relFiles = append(relFiles, relPath)
-		}
+	type treeNode struct {
+		name     string
+		path     string
+		isDir    bool
+		children map[string]*treeNode
 	}
+	root := &treeNode{children: map[string]*treeNode{}}
 
-	// 构建树形结构
-	root := make(map[string]*fileNode)
-
-	for _, file := range relFiles {
-		parts := strings.Split(file, "/")
-		if len(parts) == 0 {
+	for _, f := range files {
+		if !strings.HasPrefix(f, basePath) {
 			continue
 		}
-
-		// 处理目录
-		for i := 0; i < len(parts)-1; i++ {
-			dirPath := strings.Join(parts[:i+1], "/")
-			if _, exists := root[dirPath]; !exists {
-				root[dirPath] = &fileNode{
-					Name:  parts[i],
-					Path:  dirPath,
-					IsDir: true,
+		rel := strings.TrimPrefix(strings.TrimPrefix(f, basePath), "/")
+		if rel == "" {
+			continue
+		}
+		parts := strings.Split(rel, "/")
+		cur := root
+		for i, p := range parts {
+			isLast := i == len(parts)-1
+			// 跳过目录占位用的 .keep（其父目录已建立，空文件夹仍可见）
+			if isLast && p == ".keep" {
+				break
+			}
+			child, ok := cur.children[p]
+			if !ok {
+				child = &treeNode{
+					name:     p,
+					path:     strings.Join(parts[:i+1], "/"),
+					isDir:    !isLast,
+					children: map[string]*treeNode{},
 				}
+				cur.children[p] = child
 			}
-		}
-
-		// 处理文件
-		filePath := file
-		root[filePath] = &fileNode{
-			Name:  parts[len(parts)-1],
-			Path:  filePath,
-			IsDir: false,
+			if !isLast {
+				child.isDir = true
+			}
+			cur = child
 		}
 	}
 
-	// 构建父子关系
-	nodes := make([]fileNode, 0)
-	for nodePath, node := range root {
-		parentPath := path.Dir(nodePath)
-		if parentPath == "." || parentPath == "" || parentPath == "/" {
-			// 根级节点
-			nodes = append(nodes, *node)
-		} else if parent, exists := root[parentPath]; exists {
-			// 添加到父节点
-			if parent.Children == nil {
-				parent.Children = make([]fileNode, 0)
+	var convert func(n *treeNode) []fileNode
+	convert = func(n *treeNode) []fileNode {
+		out := make([]fileNode, 0, len(n.children))
+		for _, c := range n.children {
+			fn := fileNode{Name: c.name, Path: c.path, IsDir: c.isDir}
+			if c.isDir {
+				fn.Children = convert(c)
 			}
-			parent.Children = append(parent.Children, *node)
+			out = append(out, fn)
 		}
+		sortFileNodes(out)
+		return out
 	}
-
-	// 排序（目录在前，文件在后）
-	sortFileNodes(nodes)
-	return nodes
+	return convert(root)
 }
 
 // sortFileNodes 递归排序文件节点

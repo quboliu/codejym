@@ -119,6 +119,24 @@ func (s *LocalStorage) DeleteDir(ctx context.Context, path string) error {
 	return nil
 }
 
+// Move 移动/重命名文件或目录
+func (s *LocalStorage) Move(ctx context.Context, from, to string) error {
+	from = filepath.Clean(from)
+	to = filepath.Clean(to)
+	if strings.HasPrefix(from, "..") || strings.HasPrefix(to, "..") {
+		return fmt.Errorf("local storage: invalid path (contains ..)")
+	}
+	src := filepath.Join(s.rootDir, from)
+	dst := filepath.Join(s.rootDir, to)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("local storage: failed to create destination directory: %w", err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("local storage: failed to move: %w", err)
+	}
+	return nil
+}
+
 // GetURL 获取文件访问 URL（本地存储返回相对路径）
 func (s *LocalStorage) GetURL(ctx context.Context, path string) (string, error) {
 	// 本地存储返回相对路径，由应用层处理

@@ -180,6 +180,48 @@ func (s *S3Storage) DeleteDir(ctx context.Context, path string) error {
 	return nil
 }
 
+// Move 移动/重命名对象（S3 无原生 move：对前缀下每个对象 copy 到新键再删除原键）
+func (s *S3Storage) Move(ctx context.Context, from, to string) error {
+	from = strings.TrimPrefix(filepath.ToSlash(filepath.Clean(from)), "/")
+	to = strings.TrimPrefix(filepath.ToSlash(filepath.Clean(to)), "/")
+	if from == ".." || strings.HasPrefix(from, "../") || to == ".." || strings.HasPrefix(to, "../") {
+		return fmt.Errorf("s3 storage: invalid path (contains ..)")
+	}
+	// 收集要移动的对象：精确对象 + 该前缀（目录）下的所有对象
+	keys := map[string]struct{}{from: {}}
+	if objs, err := s.ListFiles(ctx, from+"/"); err == nil {
+		for _, k := range objs {
+			keys[k] = struct{}{}
+		}
+	}
+	for srcKey := range keys {
+		var dstKey string
+		switch {
+		case srcKey == from:
+			dstKey = to
+		case strings.HasPrefix(srcKey, from+"/"):
+			dstKey = to + strings.TrimPrefix(srcKey, from)
+		default:
+			continue
+		}
+		if _, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(s.bucket),
+			CopySource: aws.String(s.bucket + "/" + srcKey),
+			Key:        aws.String(dstKey),
+		}); err != nil {
+			// 精确对象可能不存在（纯目录移动）——跳过即可
+			if srcKey == from {
+				continue
+			}
+			return fmt.Errorf("s3 storage: failed to copy %s: %w", srcKey, err)
+		}
+		if err := s.DeleteFile(ctx, srcKey); err != nil {
+			return fmt.Errorf("s3 storage: failed to delete original %s: %w", srcKey, err)
+		}
+	}
+	return nil
+}
+
 // GetURL 获取文件访问 URL
 func (s *S3Storage) GetURL(ctx context.Context, path string) (string, error) {
 	// 清理路径

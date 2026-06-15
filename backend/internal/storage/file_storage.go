@@ -27,6 +27,9 @@ type FileStorage interface {
 	// 注意：S3 没有真正的目录概念，会删除所有匹配前缀的对象
 	DeleteDir(ctx context.Context, path string) error
 
+	// Move 移动/重命名文件或目录（from、to 均为存储相对路径）
+	Move(ctx context.Context, from, to string) error
+
 	// GetURL 获取文件访问 URL
 	// 本地存储：返回相对路径
 	// S3 存储：返回 CDN URL 或预签名 URL

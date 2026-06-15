@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,13 +39,19 @@ const defaultAuthTokenTTL = 24 * time.Hour
 
 // 获取 Token 超时时间（支持环境变量 AUTH_TOKEN_TTL 配置）
 func getAuthTokenTTL() time.Duration {
-	if ttlStr := os.Getenv("AUTH_TOKEN_TTL"); ttlStr != "" {
-		// 支持格式：30m, 24h, 7d
-		if ttl, err := time.ParseDuration(ttlStr); err == nil {
-			return ttl
-		}
-		log.Printf("warning: invalid AUTH_TOKEN_TTL format, using default %v", defaultAuthTokenTTL)
+	ttlStr := os.Getenv("AUTH_TOKEN_TTL")
+	if ttlStr == "" {
+		return defaultAuthTokenTTL
 	}
+	// 支持 "7d"/"30d"：time.ParseDuration 不认 "d"，手动换算成小时
+	if strings.HasSuffix(ttlStr, "d") {
+		if days, err := strconv.Atoi(strings.TrimSuffix(ttlStr, "d")); err == nil && days > 0 {
+			return time.Duration(days) * 24 * time.Hour
+		}
+	} else if ttl, err := time.ParseDuration(ttlStr); err == nil {
+		return ttl
+	}
+	log.Printf("warning: invalid AUTH_TOKEN_TTL %q, using default %v", ttlStr, defaultAuthTokenTTL)
 	return defaultAuthTokenTTL
 }
 
@@ -1271,8 +1278,10 @@ func (s *Server) handleAssetMkdir(user *storage.User, id string, w http.Response
 		}
 		return
 	}
-	fullPath := filepath.Join(asset.RootPath, filepath.FromSlash(relPath))
-	if err := os.MkdirAll(fullPath, 0o755); err != nil {
+	// 存储抽象层没有"空目录"概念（S3 尤其如此），用一个隐藏占位文件 .keep 让目录成立，
+	// 该文件在文件树构建时被过滤掉，不展示给用户。
+	placeholder := path.Join(asset.RootPath, filepath.ToSlash(relPath), ".keep")
+	if _, err := s.store.FileStorage().SaveFile(r.Context(), placeholder, strings.NewReader(""), "text/plain"); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create directory")
 		return
 	}
@@ -1313,17 +1322,10 @@ func (s *Server) handleAssetMoveFile(user *storage.User, id string, w http.Respo
 		}
 		return
 	}
-	fullFromPath := filepath.Join(asset.RootPath, filepath.FromSlash(fromPath))
-	fullToPath := filepath.Join(asset.RootPath, filepath.FromSlash(toPath))
-
-	// 确保目标目录存在
-	if err := os.MkdirAll(filepath.Dir(fullToPath), 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create destination directory")
-		return
-	}
-
-	if err := os.Rename(fullFromPath, fullToPath); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to move file: %v", err))
+	from := path.Join(asset.RootPath, filepath.ToSlash(fromPath))
+	to := path.Join(asset.RootPath, filepath.ToSlash(toPath))
+	if err := s.store.FileStorage().Move(r.Context(), from, to); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to move file")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "file moved successfully"})
@@ -1368,12 +1370,10 @@ func (s *Server) handleAssetRenameFile(user *storage.User, id string, w http.Res
 		}
 		return
 	}
-	fullPath := filepath.Join(asset.RootPath, filepath.FromSlash(relPath))
-	dir := filepath.Dir(fullPath)
-	newFullPath := filepath.Join(dir, newName)
-
-	if err := os.Rename(fullPath, newFullPath); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to rename: %v", err))
+	from := path.Join(asset.RootPath, filepath.ToSlash(relPath))
+	to := path.Join(path.Dir(from), newName)
+	if err := s.store.FileStorage().Move(r.Context(), from, to); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to rename")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "renamed successfully"})
@@ -1404,10 +1404,12 @@ func (s *Server) handleAssetDeleteFile(user *storage.User, id string, w http.Res
 		}
 		return
 	}
-	fullPath := filepath.Join(asset.RootPath, filepath.FromSlash(relPath))
-
-	if err := os.RemoveAll(fullPath); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete: %v", err))
+	target := path.Join(asset.RootPath, filepath.ToSlash(relPath))
+	fs := s.store.FileStorage()
+	// 同时按文件与按目录删除，兼容本地/S3 两种后端，文件或文件夹皆可删除
+	_ = fs.DeleteFile(r.Context(), target)
+	if err := fs.DeleteDir(r.Context(), target); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
