@@ -78,7 +78,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	store, err := storage.New(pool, dataDir)
+	store, err := storage.New(pool, dataDir, nil)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}

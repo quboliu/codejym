@@ -68,6 +68,10 @@ func (s *S3Storage) SaveFile(ctx context.Context, path string, reader io.Reader,
 	// 清理路径，统一使用 Unix 风格斜杠
 	path = filepath.ToSlash(filepath.Clean(path))
 	path = strings.TrimPrefix(path, "/")
+	// 防止路径遍历（与本地存储一致）
+	if path == ".." || strings.HasPrefix(path, "../") {
+		return "", fmt.Errorf("s3 storage: invalid path (contains ..): %s", path)
+	}
 
 	if contentType == "" {
 		contentType = "application/octet-stream"

@@ -260,17 +260,15 @@ func (s *Server) createAsset(user *storage.User, w http.ResponseWriter, r *http.
 		return
 	}
 
-	assetDir := s.store.AssetDir(user.ID, assetID)
-	if err := os.MkdirAll(assetDir, 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare storage")
-		return
-	}
+	// 统一使用相对存储路径（与 paste/upload 一致），所有读写都走 FileStorage。
+	// 空训练组无需预建目录：首次写文件时 FileStorage 会自动创建。
+	basePath := fmt.Sprintf("uploads/%s/%s", user.ID, assetID)
 
 	asset := &storage.Asset{
 		ID:         assetID,
 		UserID:     user.ID,
 		Name:       name,
-		RootPath:   assetDir,
+		RootPath:   basePath,
 		SizeBytes:  0,
 		FileCount:  0,
 		SourceName: "",
@@ -535,7 +533,9 @@ func (s *Server) deleteAsset(user *storage.User, id string, w http.ResponseWrite
 		}
 		return
 	}
-	if err := os.RemoveAll(asset.RootPath); err != nil {
+	// 走 FileStorage（相对路径），兼容本地与 S3；原来的 os.RemoveAll(相对路径)
+	// 会解析到进程 CWD 而非存储根，导致文件残留、永不释放。
+	if err := s.store.FileStorage().DeleteDir(r.Context(), asset.RootPath); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete files")
 		return
 	}
@@ -1027,10 +1027,17 @@ func extractZip(f *os.File, dest string, fileCount *int, bytesTotal *int64) erro
 }
 
 func sanitizeZipPath(name string) string {
-	clean := path.Clean(name)
-	clean = strings.TrimPrefix(clean, "../")
+	// 以 "/" 为根做 Clean：任何试图越界的 "../" 都会在此被折叠掉，
+	// 无法逃出 basePath（修复 zip-slip 越权写）。原实现只 TrimPrefix 一次 "../"，
+	// 残留的 ".." 会在 path.Join 时把写入位置带到其他用户目录。
+	// 显式把反斜杠也当作分隔符（ZIP 规范用 "/"，但恶意条目可能用 "\" 在 Linux 上绕过）
+	clean := path.Clean("/" + strings.ReplaceAll(name, "\\", "/"))
 	clean = strings.TrimPrefix(clean, "/")
 	if clean == "." || clean == "" {
+		return ""
+	}
+	// 兜底：Clean 之后不应再残留任何 ".." 段
+	if clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
 		return ""
 	}
 	return filepath.FromSlash(clean)
@@ -1601,13 +1608,11 @@ func (s *Server) createDefaultAsset(ctx context.Context, userID string) error {
 		return fmt.Errorf("failed to generate asset id: %w", err)
 	}
 
-	assetDir := s.store.AssetDir(userID, assetID)
-	if err := os.MkdirAll(assetDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create asset directory: %w", err)
-	}
+	// 统一相对路径 + 走 FileStorage：保证写入路径与读取路径一致，
+	// 否则会出现双重前缀（/data/uploads/data/uploads/...）导致 welcome.md 读不到。
+	basePath := fmt.Sprintf("uploads/%s/%s", userID, assetID)
 
 	// 创建一个示例文件
-	welcomeFile := filepath.Join(assetDir, "welcome.md")
 	welcomeContent := `# 欢迎使用 CodeJYM！
 
 这是你的默认训练组。你可以：
@@ -1618,7 +1623,7 @@ func (s *Server) createDefaultAsset(ctx context.Context, userID string) error {
 
 开始你的代码临摹之旅吧！
 `
-	if err := os.WriteFile(welcomeFile, []byte(welcomeContent), 0o644); err != nil {
+	if _, err := s.store.FileStorage().SaveFile(ctx, basePath+"/welcome.md", strings.NewReader(welcomeContent), "text/markdown; charset=utf-8"); err != nil {
 		return fmt.Errorf("failed to create welcome file: %w", err)
 	}
 
@@ -1626,7 +1631,7 @@ func (s *Server) createDefaultAsset(ctx context.Context, userID string) error {
 		ID:         assetID,
 		UserID:     userID,
 		Name:       "默认训练组",
-		RootPath:   assetDir,
+		RootPath:   basePath,
 		SizeBytes:  int64(len(welcomeContent)),
 		FileCount:  1,
 		SourceName: "welcome.md",
