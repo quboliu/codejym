@@ -462,6 +462,7 @@ import {
   renameAsset,
   renameFile,
   setAuthToken,
+  setUnauthorizedHandler,
   signup,
   uploadFileToAsset,
   uploadPasteToAsset,
@@ -572,6 +573,13 @@ onMounted(async () => {
   // 设置Toast全局引用
   globalToastRef.value = toastComponentRef.value
 
+  // 会话过期处理：任意已登录请求返回 401 时回到登录页（api 层已同时止住重试）
+  setUnauthorizedHandler(() => {
+    if (!user.value) return
+    clearAuth()
+    toast.error('登录已过期，请重新登录')
+  })
+
   // 尝试恢复登录状态
   const stored = localStorage.getItem(AUTH_TOKEN_KEY)
   if (stored) {
@@ -586,12 +594,17 @@ onMounted(async () => {
 
   // 监听键盘事件
   window.addEventListener('keydown', handleKeydown)
+  // 页面隐藏/卸载时兜底保存进度
+  window.addEventListener('visibilitychange', handleHiddenFlush)
+  window.addEventListener('pagehide', handleHiddenFlush)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
-  if (elapsedTimer) clearInterval(elapsedTimer)
-  if (sessionTimer) clearInterval(sessionTimer)
+  window.removeEventListener('visibilitychange', handleHiddenFlush)
+  window.removeEventListener('pagehide', handleHiddenFlush)
+  setUnauthorizedHandler(null)
+  stopTimers()
 })
 
 // 监听用户变化
@@ -607,25 +620,62 @@ watch(user, (newUser) => {
 let elapsedTimer: number | null = null
 let sessionTimer: number | null = null
 
-watch([() => session.value, () => fileContent.value], () => {
-  if (session.value && fileContent.value) {
-    // 启动计时器
-    if (elapsedTimer) clearInterval(elapsedTimer)
-    elapsedTimer = window.setInterval(() => {
-      elapsedSeconds.value += 1
-    }, 1000)
+// 上次成功保存的进度快照，用于跳过「无变化」的保存（节流：只在真正变化时才写库）
+let lastSaved = { cursor: -1, errors: -1, durationSeconds: -1 }
 
-    // 启动进度同步
-    if (sessionTimer) clearInterval(sessionTimer)
-    sessionTimer = window.setInterval(() => {
-      if (session.value) {
-        patchSession(session.value.id, {
-          cursor: cursor.value,
-          errors: errors.value,
-          durationSeconds: Math.round(elapsedSeconds.value),
-        }).catch(err => console.warn('session sync failed', err))
-      }
-    }, 1200)
+// 实质性进度变化：光标或错误数变了（用户真的在打字）。周期性保存只看这个，
+// 这样「开着页面发呆」不会每 1.2s 白写一次库。
+function meaningfulChange(): boolean {
+  return cursor.value !== lastSaved.cursor || errors.value !== lastSaved.errors
+}
+// 含用时在内的任意变化。切文件/登出/关页等「收尾」时机用它，确保累计用时也被持久化。
+function anyChange(): boolean {
+  return meaningfulChange() || Math.round(elapsedSeconds.value) !== lastSaved.durationSeconds
+}
+
+// 保存当前进度。periodic（默认）只在实质变化时写；force 用于收尾，连用时一起落库。
+// keepalive 用于页面卸载/隐藏时仍能把请求发出去。
+async function flushProgress(opts?: { keepalive?: boolean; force?: boolean }): Promise<void> {
+  if (!session.value) return
+  if (opts?.force ? !anyChange() : !meaningfulChange()) return
+  const payload = {
+    cursor: cursor.value,
+    errors: errors.value,
+    durationSeconds: Math.round(elapsedSeconds.value),
+  }
+  const snapshot = { ...payload }
+  try {
+    await patchSession(session.value.id, payload, { keepalive: opts?.keepalive })
+    lastSaved = snapshot
+  } catch (err) {
+    console.warn('session sync failed', err)
+  }
+}
+
+function stopTimers() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+  if (sessionTimer) { clearInterval(sessionTimer); sessionTimer = null }
+}
+
+// 页面隐藏/卸载时兜底保存最后一笔进度（keepalive 使请求能在卸载后送达）
+function handleHiddenFlush() {
+  if (document.visibilityState === 'hidden') {
+    void flushProgress({ keepalive: true, force: true })
+  }
+}
+
+watch([() => session.value, () => fileContent.value], () => {
+  stopTimers() // 先停旧计时器——session/fileContent 变为空时也能正确清理（修复计时器泄漏）
+  if (session.value && fileContent.value) {
+    // 以服务器返回的初始进度为基线，避免刚加载就触发一次重复保存
+    lastSaved = {
+      cursor: cursor.value,
+      errors: errors.value,
+      durationSeconds: Math.round(elapsedSeconds.value),
+    }
+    elapsedTimer = window.setInterval(() => { elapsedSeconds.value += 1 }, 1000)
+    // 周期性兜底保存：只有进度变化时才真正发请求
+    sessionTimer = window.setInterval(() => { void flushProgress() }, 1200)
   }
 })
 
@@ -673,11 +723,18 @@ async function handleAuthSubmit() {
   }
 }
 
-function handleLogout() {
+// 清理登录态并回到首页（登出与 401 过期共用）。先停计时器以立即止住后台请求。
+function clearAuth() {
+  stopTimers()
   localStorage.removeItem(AUTH_TOKEN_KEY)
   setAuthToken(null)
   user.value = null
   view.value = 'landing'
+}
+
+async function handleLogout() {
+  await flushProgress({ force: true }) // 退出前保存当前进度
+  clearAuth()
   toast.info('已退出登录')
 }
 
@@ -776,6 +833,8 @@ async function handlePasteSubmit() {
 
 async function handleSelectAsset(id: string) {
   if (!user.value) return
+  await flushProgress({ force: true }) // 切换训练组前保存当前进度
+  stopTimers()
   selectedAsset.value = id
   selectedPath.value = null
   fileContent.value = null
@@ -988,6 +1047,8 @@ async function refreshFileTree() {
 
 async function handleSelectFile(path: string) {
   if (!selectedAsset.value || !user.value) return
+  await flushProgress({ force: true }) // 切换文件前保存当前进度
+  stopTimers()
   selectedPath.value = path
 
   try {

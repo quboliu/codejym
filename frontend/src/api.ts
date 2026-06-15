@@ -3,9 +3,15 @@ import type { Asset, AuthResponse, FileContent, FileNode, Session, User } from '
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
 let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
+}
+
+// 注册「鉴权失效」回调：已登录态下任意请求返回 401（token 过期/失效）时触发。
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -14,6 +20,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!isForm && !finalHeaders.has('Content-Type')) {
     finalHeaders.set('Content-Type', 'application/json');
   }
+  const hadToken = !!authToken;
   if (authToken) {
     finalHeaders.set('Authorization', `Bearer ${authToken}`);
   }
@@ -21,6 +28,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: finalHeaders,
   });
+  if (response.status === 401 && hadToken) {
+    // 已登录态下的 401 = 会话过期：立刻清掉本地 token（从源头止住每 1.2s 的重试风暴）并通知上层回登录
+    authToken = null;
+    onUnauthorized?.();
+  }
   if (!response.ok) {
     const message = await extractError(response);
     throw new Error(message);
@@ -170,9 +182,14 @@ export function fetchSession(sessionId: string) {
   return request<Session>(`/api/sessions/${sessionId}`);
 }
 
-export function patchSession(sessionId: string, payload: Partial<Pick<Session, 'cursor' | 'errors' | 'durationSeconds'>>) {
+export function patchSession(
+  sessionId: string,
+  payload: Partial<Pick<Session, 'cursor' | 'errors' | 'durationSeconds'>>,
+  opts?: { keepalive?: boolean },
+) {
   return request<Session>(`/api/sessions/${sessionId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+    keepalive: opts?.keepalive, // 页面卸载/隐藏时仍能把最后一笔进度发出去
   });
 }
