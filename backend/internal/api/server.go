@@ -1632,22 +1632,12 @@ func (s *Server) createDefaultAsset(ctx context.Context, userID string) error {
 	}
 
 	// 统一相对路径 + 走 FileStorage：保证写入路径与读取路径一致，
-	// 否则会出现双重前缀（/data/uploads/data/uploads/...）导致 welcome.md 读不到。
+	// 否则会出现双重前缀（/data/uploads/data/uploads/...）导致文件读不到。
 	basePath := fmt.Sprintf("uploads/%s/%s", userID, assetID)
 
-	// 创建一个示例文件
-	welcomeContent := `# 欢迎使用 CodeJYM！
-
-这是你的默认训练组。你可以：
-
-1. 上传代码文件进行练习
-2. 上传整个项目的 ZIP 包
-3. 创建新的训练组来组织不同的练习内容
-
-开始你的代码临摹之旅吧！
-`
-	if _, err := s.store.FileStorage().SaveFile(ctx, basePath+"/welcome.md", strings.NewReader(welcomeContent), "text/markdown; charset=utf-8"); err != nil {
-		return fmt.Errorf("failed to create welcome file: %w", err)
+	// 默认训练组放一份「典型原文」——经典的快速排序实现，开箱即可临摹练习。
+	if _, err := s.store.FileStorage().SaveFile(ctx, basePath+"/"+defaultPracticeFilename, strings.NewReader(defaultPracticeFile), "text/x-go; charset=utf-8"); err != nil {
+		return fmt.Errorf("failed to create default practice file: %w", err)
 	}
 
 	asset := &storage.Asset{
@@ -1655,9 +1645,9 @@ func (s *Server) createDefaultAsset(ctx context.Context, userID string) error {
 		UserID:     userID,
 		Name:       "默认训练组",
 		RootPath:   basePath,
-		SizeBytes:  int64(len(welcomeContent)),
+		SizeBytes:  int64(len(defaultPracticeFile)),
 		FileCount:  1,
-		SourceName: "welcome.md",
+		SourceName: defaultPracticeFilename,
 	}
 
 	if err := s.store.RegisterAsset(ctx, asset); err != nil {
