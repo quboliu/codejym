@@ -8,7 +8,7 @@
 
 ```bash
 # 1. 一键部署
-./deploy.sh
+./scripts/deploy.sh
 
 # 2. 访问
 # http://localhost:8080
@@ -22,10 +22,10 @@
 
 ```bash
 # 1. 停止本地服务
-docker compose down
+docker compose -f config/docker-compose.yml down
 
 # 2. 启动完整服务（包含 Nginx 反向代理）
-docker compose -f docker-compose.proxy.yml up -d
+docker compose -f config/docker-compose.proxy.yml up -d
 
 # 3. 访问
 # http://jiezispace.com
@@ -57,7 +57,7 @@ caddy:
 
 **步骤 2**：启动服务
 ```bash
-docker compose -f docker-compose.proxy.yml up -d
+docker compose -f config/docker-compose.proxy.yml up -d
 ```
 
 **步骤 3**：访问
@@ -77,7 +77,7 @@ sudo apt update
 sudo apt install -y nginx
 
 # 2. 复制配置
-sudo cp nginx.conf /etc/nginx/sites-available/jiezispace.com
+sudo cp config/nginx.conf /etc/nginx/sites-available/jiezispace.com
 sudo ln -s /etc/nginx/sites-available/jiezispace.com /etc/nginx/sites-enabled/
 
 # 3. 测试并重启
@@ -100,7 +100,7 @@ docker compose ps
 docker compose logs -f codecopybook
 
 # 测试访问
-curl http://localhost:8080
+curl http://localhost:8080/healthz
 curl http://jiezispace.com
 ```
 
@@ -110,20 +110,20 @@ curl http://jiezispace.com
 
 ```bash
 # 查看服务
-docker compose ps
+docker compose -f config/docker-compose.yml ps
 
 # 查看日志
-docker compose logs -f codecopybook
-docker compose logs -f postgres
+docker compose -f config/docker-compose.yml logs -f codecopybook
+docker compose -f config/docker-compose.yml logs -f postgres
 
 # 重启服务
-docker compose restart
+docker compose -f config/docker-compose.yml restart
 
 # 停止服务
-docker compose down
+docker compose -f config/docker-compose.yml down
 
 # 完全清理
-docker compose down -v
+docker compose -f config/docker-compose.yml down -v
 ```
 
 ---

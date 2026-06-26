@@ -33,7 +33,7 @@ CodeJym/
 │   └── internal/        # 内部包
 │       ├── api/         # HTTP 处理器
 │       └── storage/     # 存储层（PostgreSQL + S3）
-├── frontend/            # React 前端应用
+├── frontend/            # Vue 3 前端应用
 ├── scripts/             # 部署和运维脚本
 │   ├── deploy.sh
 │   ├── deploy-full.sh
@@ -122,20 +122,20 @@ S3_BACKUP_BUCKET=codejym-backups
 ### Docker 服务管理
 ```bash
 # 查看服务状态
-docker compose ps
+docker compose -f config/docker-compose.yml ps
 
 # 查看日志
-docker compose logs -f codecopybook    # 应用日志
-docker compose logs -f postgres        # 数据库日志
+docker compose -f config/docker-compose.yml logs -f codecopybook    # 应用日志
+docker compose -f config/docker-compose.yml logs -f postgres        # 数据库日志
 
 # 重启服务
-docker compose restart
+docker compose -f config/docker-compose.yml restart
 
 # 停止服务
-docker compose down
+docker compose -f config/docker-compose.yml down
 
 # 完全清理（删除所有数据）
-docker compose down -v
+docker compose -f config/docker-compose.yml down -v
 ```
 
 ### 数据库备份
@@ -159,7 +159,7 @@ docker compose down -v
 - **容器化**：Docker + Docker Compose
 
 ### 前端
-- **框架**：React 18
+- **框架**：Vue 3
 - **语言**：TypeScript
 - **构建工具**：Vite
 - **样式**：CSS Modules
