@@ -37,6 +37,10 @@
 import { ref } from 'vue'
 import type { ToastType } from '../../composables/useToast'
 
+defineOptions({
+  name: 'CommonToast',
+})
+
 export interface Toast {
   id: string
   type: ToastType

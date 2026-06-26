@@ -43,6 +43,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+defineOptions({
+  name: 'CommonModal',
+})
+
 const props = withDefaults(
   defineProps<{
     modelValue: boolean

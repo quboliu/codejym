@@ -10,8 +10,10 @@ interface ToastOptions {
   duration?: number
 }
 
+type ToastPayload = Omit<ToastOptions, 'type'> & { type: ToastType }
+
 // 全局Toast实例引用
-export const toastRef = ref<{ addToast: (toast: any) => void } | null>(null)
+export const toastRef = ref<{ addToast: (toast: ToastPayload) => void } | null>(null)
 
 export function useToast() {
   function showToast(options: ToastOptions) {
