@@ -1664,24 +1664,29 @@ function computeWPM(chars: number, seconds: number) {
 </script>
 
 <style scoped>
-/* ==================== 登录页 ==================== */
+/* ==================== Auth Page (Minimalist) ==================== */
 .auth-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-lg);
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-primary);
+  position: relative;
+  overflow: hidden;
 }
 
 .auth-container {
+  position: relative;
+  z-index: 10;
   width: 100%;
-  max-width: 400px;
-  background: var(--color-bg-elevated);
+  max-width: 380px;
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   padding: var(--space-2xl);
   box-shadow: var(--shadow-xl);
+  animation: slideUp var(--transition-slow) ease-out;
 }
 
 .auth-header {
@@ -1701,27 +1706,29 @@ function computeWPM(chars: number, seconds: number) {
   margin: calc(-1 * var(--space-xs)) 0 0 calc(-1 * var(--space-sm));
   background: none;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   color: var(--color-text-tertiary);
   font-size: var(--font-size-xs);
   cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: all var(--transition-fast);
 }
 
 .auth-back:hover {
   color: var(--color-text-primary);
-  background: var(--color-accent-subtle);
+  background: var(--color-bg-secondary);
 }
 
 .auth-brand {
   display: flex;
   justify-content: center;
-  margin-bottom: var(--space-sm);
-  padding-top: var(--space-lg);
+  margin-bottom: var(--space-md);
+  padding-top: var(--space-md);
 }
 
 .auth-tagline {
   font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: 300;
 }
 
 .auth-form {
@@ -1734,28 +1741,29 @@ function computeWPM(chars: number, seconds: number) {
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
 }
 
 .form-group label {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   font-weight: 500;
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .form-hint {
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
-  margin-top: -4px;
 }
 
 .form-warning {
   padding: var(--space-sm);
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
+  background: transparent;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
   margin-bottom: var(--space-md);
 }
 
@@ -1770,6 +1778,7 @@ function computeWPM(chars: number, seconds: number) {
   border: none;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+  font-weight: 400;
   cursor: pointer;
   padding: var(--space-xs) 0;
   transition: color var(--transition-fast);
@@ -1779,15 +1788,16 @@ function computeWPM(chars: number, seconds: number) {
   color: var(--color-text-primary);
 }
 
-/* ==================== 主应用布局 ==================== */
+/* ==================== Main Layout ==================== */
 .app-layout {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary);
+  overflow: hidden;
 }
 
-/* 顶部导航栏 */
+/* Header */
 .app-header {
   height: var(--header-height);
   display: flex;
@@ -1795,9 +1805,11 @@ function computeWPM(chars: number, seconds: number) {
   justify-content: space-between;
   padding: 0 var(--space-lg);
   background: var(--color-bg-elevated);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--color-border);
-  box-shadow: var(--shadow-sm);
   flex-shrink: 0;
+  z-index: 40;
 }
 
 .header-left,
@@ -1808,9 +1820,9 @@ function computeWPM(chars: number, seconds: number) {
 }
 
 .app-title {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .user-menu {
@@ -1821,11 +1833,11 @@ function computeWPM(chars: number, seconds: number) {
   position: absolute;
   top: calc(100% + var(--space-sm));
   right: 0;
-  min-width: 200px;
-  background: var(--color-bg-elevated);
+  min-width: 220px;
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
   padding: var(--space-sm);
   opacity: 0;
   visibility: hidden;
@@ -1846,14 +1858,13 @@ function computeWPM(chars: number, seconds: number) {
 
 .user-name {
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-text-primary);
-  margin-bottom: var(--space-xs);
 }
 
 .user-email {
   font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .dropdown-divider {
@@ -1867,42 +1878,46 @@ function computeWPM(chars: number, seconds: number) {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   font-size: var(--font-size-sm);
+  font-weight: 400;
   color: var(--color-text-secondary);
   background: none;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
   text-align: left;
 }
 
 .dropdown-item:hover {
-  background: var(--color-accent-subtle);
+  background: var(--color-bg-secondary);
   color: var(--color-text-primary);
 }
 
-/* 内容区域 */
+/* Main Content */
 .app-content {
   flex: 1;
   display: flex;
   overflow: hidden;
+  position: relative;
 }
 
-/* 侧边栏 */
+/* Sidebar */
 .sidebar {
   width: var(--sidebar-width);
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-secondary);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   transition: transform var(--transition-base);
+  z-index: 30;
 }
 
 .sidebar.collapsed {
   transform: translateX(-100%);
+  position: absolute;
 }
 
 .sidebar-section {
@@ -1923,8 +1938,8 @@ function computeWPM(chars: number, seconds: number) {
 }
 
 .section-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-size: 0.65rem;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-tertiary);
@@ -1943,19 +1958,13 @@ function computeWPM(chars: number, seconds: number) {
   gap: var(--space-sm);
 }
 
-.btn-icon-sm {
-  padding: var(--space-xs);
-  min-width: 24px;
-  min-height: 24px;
-}
-
-/* 工作区 */
+/* Workspace */
 .workspace {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-primary);
 }
 
 .workspace-empty {
@@ -1967,10 +1976,11 @@ function computeWPM(chars: number, seconds: number) {
   gap: var(--space-md);
   text-align: center;
   color: var(--color-text-tertiary);
+  animation: fadeIn var(--transition-slow);
 }
 
 .empty-icon {
-  opacity: 0.3;
+  opacity: 0.2;
 }
 
 .workspace-content {
@@ -1980,9 +1990,9 @@ function computeWPM(chars: number, seconds: number) {
   overflow: hidden;
 }
 
-/* 进度栏 */
+/* Progress Bar */
 .progress-bar {
-  height: 3px;
+  height: 2px;
   background: var(--color-border);
   position: relative;
   overflow: hidden;
@@ -1990,25 +2000,9 @@ function computeWPM(chars: number, seconds: number) {
 
 .progress-fill {
   height: 100%;
-  background: var(--color-accent);
-  transition: width var(--transition-base);
+  background: var(--color-text-primary);
+  transition: width var(--transition-base) ease-out;
   position: relative;
-}
-
-.progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
 }
 
 .mode-bar {
@@ -2016,8 +2010,8 @@ function computeWPM(chars: number, seconds: number) {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  padding: var(--space-md) var(--space-xl);
-  background: var(--color-bg-elevated);
+  padding: var(--space-sm) var(--space-xl);
+  background: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -2025,24 +2019,26 @@ function computeWPM(chars: number, seconds: number) {
   display: inline-flex;
   align-items: center;
   padding: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
 }
 
 .mode-tab {
-  min-width: 64px;
-  padding: var(--space-xs) var(--space-md);
+  min-width: 80px;
+  padding: 4px var(--space-md);
   border: 0;
-  border-radius: calc(var(--radius-md) - 2px);
+  border-radius: calc(var(--radius-sm) - 2px);
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
 .mode-tab.active {
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-primary);
   color: var(--color-text-primary);
   box-shadow: var(--shadow-sm);
 }
@@ -2053,35 +2049,38 @@ function computeWPM(chars: number, seconds: number) {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
 }
 
-/* 统计栏 */
+/* Stats */
 .stats-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-xl);
-  padding: var(--space-lg) var(--space-xl);
-  background: var(--color-bg-elevated);
+  gap: var(--space-3xl);
+  padding: var(--space-md) var(--space-xl);
+  background: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 2px;
 }
 
 .stat-label {
-  font-size: var(--font-size-xs);
+  font-size: 0.6rem;
+  font-weight: 500;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .stat-value {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-lg);
+  font-weight: 400;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -2090,11 +2089,13 @@ function computeWPM(chars: number, seconds: number) {
   color: var(--color-error);
 }
 
-/* 临摹区域 */
+/* Practice Area */
 .practice-area {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-xl);
+  position: relative;
+  background: var(--color-bg-secondary);
 }
 
 .fillin-loading {
@@ -2103,9 +2104,11 @@ function computeWPM(chars: number, seconds: number) {
   align-items: center;
   justify-content: center;
   color: var(--color-text-tertiary);
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  font-weight: 400;
+  font-size: var(--font-size-sm);
 }
 
 .typing-input {
@@ -2121,27 +2124,28 @@ function computeWPM(chars: number, seconds: number) {
   pointer-events: none;
 }
 
-/* 操作栏 */
+/* Action Bar */
 .action-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-md) var(--space-xl);
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-primary);
   border-top: 1px solid var(--color-border);
   gap: var(--space-md);
+  z-index: 20;
 }
 
 .action-hint {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
 }
 
 .action-hint kbd {
-  padding: var(--space-xs) var(--space-sm);
+  padding: 2px 6px;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -2163,16 +2167,16 @@ function computeWPM(chars: number, seconds: number) {
 }
 
 .checkbox-row input {
-  margin-top: 3px;
+  margin-top: 4px;
 }
 
 .model-status {
-  padding: var(--space-sm);
+  padding: var(--space-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-bg-secondary);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
 }
 
 .model-settings-actions {
@@ -2185,26 +2189,25 @@ function computeWPM(chars: number, seconds: number) {
 .opacity-control {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  font-size: var(--font-size-sm);
+  gap: var(--space-md);
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .opacity-label {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-weight: 500;
+  gap: 6px;
   cursor: default;
 }
 
 .opacity-slider {
-  width: 120px;
-  height: 4px;
+  width: 140px;
+  height: 2px;
   -webkit-appearance: none;
   appearance: none;
   background: var(--color-border);
-  border-radius: 2px;
+  border-radius: 0;
   outline: none;
   cursor: pointer;
 }
@@ -2212,37 +2215,17 @@ function computeWPM(chars: number, seconds: number) {
 .opacity-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--color-accent);
+  width: 12px;
+  height: 12px;
+  background: var(--color-text-primary);
   border-radius: 50%;
   cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.opacity-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-}
-
-.opacity-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--color-accent);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.opacity-slider::-moz-range-thumb:hover {
-  transform: scale(1.2);
 }
 
 .opacity-value {
   font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  min-width: 35px;
+  color: var(--color-text-primary);
+  min-width: 40px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -2252,15 +2235,11 @@ function computeWPM(chars: number, seconds: number) {
   gap: var(--space-sm);
 }
 
-/* 响应式 */
+/* Responsive */
 @media (max-width: 1024px) {
   .stats-bar {
     gap: var(--space-lg);
-    padding: var(--space-md) var(--space-lg);
-  }
-
-  .stat-value {
-    font-size: var(--font-size-lg);
+    padding: var(--space-sm) var(--space-lg);
   }
 }
 
@@ -2302,6 +2281,10 @@ function computeWPM(chars: number, seconds: number) {
 
   .action-buttons .btn {
     flex: 1;
+  }
+  
+  .auth-container {
+    padding: var(--space-xl);
   }
 }
 </style>

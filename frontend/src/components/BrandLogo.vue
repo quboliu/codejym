@@ -23,36 +23,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-
-const props = withDefaults(
-  defineProps<{
-    /** Pixel size of the logo mark. */
-    size?: number
-    /** Show the "CodeJYM" wordmark next to the mark. */
-    withWordmark?: boolean
-    /** CSS font-size for the wordmark. */
-    wordmarkSize?: string
-    /** Stroke width of the mark. */
-    strokeWidth?: number
-    /** Render the mark inside a filled rounded badge (inverse colors). */
-    badge?: boolean
-  }>(),
-  {
-    size: 24,
-    withWordmark: true,
-    wordmarkSize: '1.25rem',
-    strokeWidth: 2.4,
-    badge: false,
-  }
-)
-
-const badgeStyle = computed(() => {
-  const pad = Math.round(props.size * 0.42)
-  return {
-    padding: `${pad}px`,
-    borderRadius: `${Math.round((props.size + pad * 2) * 0.28)}px`,
-  }
+defineProps({
+  size: {
+    type: Number,
+    default: 24,
+  },
+  wordmarkSize: {
+    type: String,
+    default: '',
+  },
 })
 </script>
 
@@ -60,30 +39,34 @@ const badgeStyle = computed(() => {
 .brand-logo {
   display: inline-flex;
   align-items: center;
-  gap: 0.55em;
+  gap: 0.6em;
   color: var(--color-text-primary);
   user-select: none;
   line-height: 1;
+  transition: opacity var(--transition-fast);
 }
 
-.brand-mark-wrap {
-  display: inline-flex;
-  flex-shrink: 0;
+.brand-logo:hover {
+  opacity: 0.8;
 }
 
-.brand-mark-wrap.badge {
-  background: var(--color-accent);
-  box-shadow: var(--shadow-md);
+.brand-seal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent); /* Seal red */
+  transform: rotate(-3deg); /* Slight handcrafted rotation */
 }
 
-.brand-mark {
-  display: block;
+.brand-seal svg {
+  width: 100%;
+  height: 100%;
 }
 
 .brand-name {
-  font-family: var(--font-sans);
-  font-weight: 700;
-  letter-spacing: -0.035em;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: var(--color-text-primary);
   white-space: nowrap;
 }
