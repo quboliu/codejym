@@ -17,6 +17,24 @@ CodeJYM is a code practice studio for deliberate source-code memorization. It he
 | Persistence | PostgreSQL stores users, assets, trace sessions, fill-in templates, fill-in attempts, and model configuration. Redis can buffer high-volume progress writes. |
 | Deployment | Docker Compose profiles cover local single-instance deployment, proxy deployment, and a scaled local multi-replica setup. |
 
+## Screenshots
+
+### Landing
+
+![CodeJYM landing page](docs/assets/screenshots/landing.png)
+
+### Login
+
+![CodeJYM login page](docs/assets/screenshots/auth.png)
+
+### Trace Practice
+
+![CodeJYM trace practice page](docs/assets/screenshots/trace-practice.png)
+
+### Fill-in Practice
+
+![CodeJYM fill-in practice page](docs/assets/screenshots/fill-in-practice.png)
+
 ## Quick Start
 
 Start the complete local stack:
