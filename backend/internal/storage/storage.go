@@ -17,7 +17,7 @@ import (
 
 // Storage persists metadata to PostgreSQL while keeping uploaded blobs on disk or S3.
 type Storage struct {
-	uploadsDir  string      // 保留用于兼容性（本地存储时使用）
+	uploadsDir  string // 保留用于兼容性（本地存储时使用）
 	db          *pgxpool.Pool
 	fileStorage FileStorage // 抽象文件存储接口
 }
@@ -89,6 +89,88 @@ func (s *Storage) Migrate(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user_asset ON typing_sessions(user_id, asset_id);`,
+		`CREATE TABLE IF NOT EXISTS source_file_versions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+			rel_path TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			language TEXT NOT NULL,
+			size_bytes BIGINT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE (user_id, asset_id, rel_path, content_hash)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_source_file_versions_lookup ON source_file_versions(user_id, asset_id, rel_path, content_hash);`,
+		`CREATE TABLE IF NOT EXISTS fill_in_templates (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			source_version_id TEXT NOT NULL REFERENCES source_file_versions(id) ON DELETE CASCADE,
+			asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+			rel_path TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			language TEXT NOT NULL,
+			status TEXT NOT NULL,
+			difficulty TEXT NOT NULL,
+			intent TEXT NOT NULL,
+			generation_method TEXT NOT NULL,
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			scores_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+			audit_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fill_in_templates_pool ON fill_in_templates(user_id, source_version_id, status, created_at);`,
+		`CREATE TABLE IF NOT EXISTS fill_in_blanks (
+			id TEXT PRIMARY KEY,
+			template_id TEXT NOT NULL REFERENCES fill_in_templates(id) ON DELETE CASCADE,
+			position INT NOT NULL,
+			start_offset INT NOT NULL,
+			end_offset INT NOT NULL,
+			answer TEXT NOT NULL,
+			line_start INT NOT NULL,
+			line_end INT NOT NULL,
+			kind TEXT NOT NULL,
+			value_score DOUBLE PRECISION NOT NULL,
+			difficulty_contribution DOUBLE PRECISION NOT NULL,
+			hint TEXT NOT NULL DEFAULT '',
+			rationale TEXT NOT NULL DEFAULT '',
+			UNIQUE (template_id, position)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fill_in_blanks_template ON fill_in_blanks(template_id, position);`,
+		`CREATE TABLE IF NOT EXISTS fill_in_sessions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			template_id TEXT NOT NULL REFERENCES fill_in_templates(id) ON DELETE CASCADE,
+			status TEXT NOT NULL,
+			completion_outcome TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE (user_id, template_id)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fill_in_sessions_user_template ON fill_in_sessions(user_id, template_id);`,
+		`CREATE TABLE IF NOT EXISTS fill_in_blank_answers (
+			session_id TEXT NOT NULL REFERENCES fill_in_sessions(id) ON DELETE CASCADE,
+			blank_id TEXT NOT NULL REFERENCES fill_in_blanks(id) ON DELETE CASCADE,
+			current_input TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			error_count INT NOT NULL DEFAULT 0,
+			revealed BOOLEAN NOT NULL DEFAULT false,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			PRIMARY KEY (session_id, blank_id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS user_model_configs (
+			user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			base_url TEXT NOT NULL DEFAULT '',
+			encrypted_api_key TEXT NOT NULL DEFAULT '',
+			key_hint TEXT NOT NULL DEFAULT '',
+			source_access_enabled BOOLEAN NOT NULL DEFAULT true,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(ctx, stmt); err != nil {

@@ -49,6 +49,10 @@ services:
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
       - DB_MAX_CONNS=${DB_MAX_CONNS:-50}
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me}
+      - MODEL_CONFIG_SECRET=${MODEL_CONFIG_SECRET:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - AUTH_TOKEN_TTL=${AUTH_TOKEN_TTL:-24h}
       - DEMO_EMAIL=${DEMO_EMAIL:-demo@codejym.dev}
       - DEMO_PASSWORD=${DEMO_PASSWORD:-demo1234}

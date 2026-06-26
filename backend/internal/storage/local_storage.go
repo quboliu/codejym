@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // LocalStorage 本地文件系统存储实现
@@ -32,13 +31,12 @@ func NewLocalStorage(rootDir string) (*LocalStorage, error) {
 
 // SaveFile 保存文件到本地文件系统
 func (s *LocalStorage) SaveFile(ctx context.Context, path string, reader io.Reader, contentType string) (string, error) {
-	// 清理路径，防止路径遍历攻击
-	path = filepath.Clean(path)
-	if strings.HasPrefix(path, "..") {
-		return "", fmt.Errorf("local storage: invalid path (contains ..): %s", path)
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return "", fmt.Errorf("local storage: invalid path: %s", path)
 	}
 
-	fullPath := filepath.Join(s.rootDir, path)
+	fullPath := filepath.Join(s.rootDir, filepath.FromSlash(cleanPath))
 
 	// 创建父目录
 	dir := filepath.Dir(fullPath)
@@ -58,23 +56,22 @@ func (s *LocalStorage) SaveFile(ctx context.Context, path string, reader io.Read
 		return "", fmt.Errorf("local storage: failed to write file: %w", err)
 	}
 
-	return path, nil
+	return cleanPath, nil
 }
 
 // GetFile 从本地文件系统获取文件
 func (s *LocalStorage) GetFile(ctx context.Context, path string) (io.ReadCloser, error) {
-	// 清理路径
-	path = filepath.Clean(path)
-	if strings.HasPrefix(path, "..") {
-		return nil, fmt.Errorf("local storage: invalid path (contains ..): %s", path)
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("local storage: invalid path: %s", path)
 	}
 
-	fullPath := filepath.Join(s.rootDir, path)
+	fullPath := filepath.Join(s.rootDir, filepath.FromSlash(cleanPath))
 
 	file, err := os.Open(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("local storage: file not found: %s", path)
+			return nil, fmt.Errorf("local storage: file not found: %s", cleanPath)
 		}
 		return nil, fmt.Errorf("local storage: failed to open file: %w", err)
 	}
@@ -84,13 +81,12 @@ func (s *LocalStorage) GetFile(ctx context.Context, path string) (io.ReadCloser,
 
 // DeleteFile 删除单个文件
 func (s *LocalStorage) DeleteFile(ctx context.Context, path string) error {
-	// 清理路径
-	path = filepath.Clean(path)
-	if strings.HasPrefix(path, "..") {
-		return fmt.Errorf("local storage: invalid path (contains ..): %s", path)
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return fmt.Errorf("local storage: invalid path: %s", path)
 	}
 
-	fullPath := filepath.Join(s.rootDir, path)
+	fullPath := filepath.Join(s.rootDir, filepath.FromSlash(cleanPath))
 
 	if err := os.Remove(fullPath); err != nil {
 		if os.IsNotExist(err) {
@@ -104,13 +100,12 @@ func (s *LocalStorage) DeleteFile(ctx context.Context, path string) error {
 
 // DeleteDir 递归删除目录
 func (s *LocalStorage) DeleteDir(ctx context.Context, path string) error {
-	// 清理路径
-	path = filepath.Clean(path)
-	if strings.HasPrefix(path, "..") {
-		return fmt.Errorf("local storage: invalid path (contains ..): %s", path)
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return fmt.Errorf("local storage: invalid path: %s", path)
 	}
 
-	fullPath := filepath.Join(s.rootDir, path)
+	fullPath := filepath.Join(s.rootDir, filepath.FromSlash(cleanPath))
 
 	if err := os.RemoveAll(fullPath); err != nil {
 		return fmt.Errorf("local storage: failed to delete directory: %w", err)
@@ -121,13 +116,16 @@ func (s *LocalStorage) DeleteDir(ctx context.Context, path string) error {
 
 // Move 移动/重命名文件或目录
 func (s *LocalStorage) Move(ctx context.Context, from, to string) error {
-	from = filepath.Clean(from)
-	to = filepath.Clean(to)
-	if strings.HasPrefix(from, "..") || strings.HasPrefix(to, "..") {
-		return fmt.Errorf("local storage: invalid path (contains ..)")
+	cleanFrom, err := cleanStoragePath(from)
+	if err != nil {
+		return fmt.Errorf("local storage: invalid source path: %s", from)
 	}
-	src := filepath.Join(s.rootDir, from)
-	dst := filepath.Join(s.rootDir, to)
+	cleanTo, err := cleanStoragePath(to)
+	if err != nil {
+		return fmt.Errorf("local storage: invalid destination path: %s", to)
+	}
+	src := filepath.Join(s.rootDir, filepath.FromSlash(cleanFrom))
+	dst := filepath.Join(s.rootDir, filepath.FromSlash(cleanTo))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("local storage: failed to create destination directory: %w", err)
 	}
@@ -145,16 +143,15 @@ func (s *LocalStorage) GetURL(ctx context.Context, path string) (string, error) 
 
 // ListFiles 列出目录下的所有文件
 func (s *LocalStorage) ListFiles(ctx context.Context, prefix string) ([]string, error) {
-	// 清理路径
-	prefix = filepath.Clean(prefix)
-	if strings.HasPrefix(prefix, "..") {
-		return nil, fmt.Errorf("local storage: invalid path (contains ..): %s", prefix)
+	cleanPrefix, err := cleanStoragePath(prefix)
+	if err != nil {
+		return nil, fmt.Errorf("local storage: invalid path: %s", prefix)
 	}
 
-	fullPrefix := filepath.Join(s.rootDir, prefix)
+	fullPrefix := filepath.Join(s.rootDir, filepath.FromSlash(cleanPrefix))
 	var files []string
 
-	err := filepath.Walk(fullPrefix, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(fullPrefix, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// 如果目录不存在，返回空列表而不是错误
 			if os.IsNotExist(err) {
@@ -177,8 +174,8 @@ func (s *LocalStorage) ListFiles(ctx context.Context, prefix string) ([]string, 
 		return nil
 	})
 
-	if err != nil {
-		return nil, fmt.Errorf("local storage: failed to list files: %w", err)
+	if walkErr != nil {
+		return nil, fmt.Errorf("local storage: failed to list files: %w", walkErr)
 	}
 
 	return files, nil

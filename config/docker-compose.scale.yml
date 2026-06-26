@@ -56,6 +56,10 @@ services:
       - DB_MAX_CONNS=${DB_MAX_CONNS:-25}
       # 所有副本必须共用同一 AUTH_SECRET，否则一个副本签发的 JWT 在另一个副本失效
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me}
+      - MODEL_CONFIG_SECRET=${MODEL_CONFIG_SECRET:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DEMO_EMAIL=${DEMO_EMAIL:-demo@codejym.dev}
       - DEMO_PASSWORD=${DEMO_PASSWORD:-demo1234}
       - STORAGE_TYPE=${STORAGE_TYPE:-local}

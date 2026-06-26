@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -65,12 +64,9 @@ func NewS3Storage(endpoint, accessKey, secretKey, bucket, region, urlPrefix stri
 
 // SaveFile 上传文件到 S3
 func (s *S3Storage) SaveFile(ctx context.Context, path string, reader io.Reader, contentType string) (string, error) {
-	// 清理路径，统一使用 Unix 风格斜杠
-	path = filepath.ToSlash(filepath.Clean(path))
-	path = strings.TrimPrefix(path, "/")
-	// 防止路径遍历（与本地存储一致）
-	if path == ".." || strings.HasPrefix(path, "../") {
-		return "", fmt.Errorf("s3 storage: invalid path (contains ..): %s", path)
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return "", fmt.Errorf("s3 storage: invalid path: %s", path)
 	}
 
 	if contentType == "" {
@@ -79,28 +75,29 @@ func (s *S3Storage) SaveFile(ctx context.Context, path string, reader io.Reader,
 
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(path),
+		Key:         aws.String(cleanPath),
 		Body:        reader,
 		ContentType: aws.String(contentType),
 	}
 
-	_, err := s.client.PutObject(ctx, input)
+	_, err = s.client.PutObject(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("s3 storage: failed to upload file: %w", err)
 	}
 
-	return path, nil
+	return cleanPath, nil
 }
 
 // GetFile 从 S3 下载文件
 func (s *S3Storage) GetFile(ctx context.Context, path string) (io.ReadCloser, error) {
-	// 清理路径
-	path = filepath.ToSlash(filepath.Clean(path))
-	path = strings.TrimPrefix(path, "/")
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("s3 storage: invalid path: %s", path)
+	}
 
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(path),
+		Key:    aws.String(cleanPath),
 	}
 
 	result, err := s.client.GetObject(ctx, input)
@@ -113,16 +110,17 @@ func (s *S3Storage) GetFile(ctx context.Context, path string) (io.ReadCloser, er
 
 // DeleteFile 删除 S3 上的单个文件
 func (s *S3Storage) DeleteFile(ctx context.Context, path string) error {
-	// 清理路径
-	path = filepath.ToSlash(filepath.Clean(path))
-	path = strings.TrimPrefix(path, "/")
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return fmt.Errorf("s3 storage: invalid path: %s", path)
+	}
 
 	input := &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(path),
+		Key:    aws.String(cleanPath),
 	}
 
-	_, err := s.client.DeleteObject(ctx, input)
+	_, err = s.client.DeleteObject(ctx, input)
 	if err != nil {
 		return fmt.Errorf("s3 storage: failed to delete file: %w", err)
 	}
@@ -132,17 +130,18 @@ func (s *S3Storage) DeleteFile(ctx context.Context, path string) error {
 
 // DeleteDir 删除 S3 上的目录（递归删除所有匹配前缀的对象）
 func (s *S3Storage) DeleteDir(ctx context.Context, path string) error {
-	// 清理路径
-	path = filepath.ToSlash(filepath.Clean(path))
-	path = strings.TrimPrefix(path, "/")
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return fmt.Errorf("s3 storage: invalid path: %s", path)
+	}
 
 	// 确保路径以斜杠结尾（匹配目录）
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
+	if !strings.HasSuffix(cleanPath, "/") {
+		cleanPath += "/"
 	}
 
 	// 列出所有文件
-	files, err := s.ListFiles(ctx, path)
+	files, err := s.ListFiles(ctx, cleanPath)
 	if err != nil {
 		return err
 	}
@@ -171,7 +170,7 @@ func (s *S3Storage) DeleteDir(ctx context.Context, path string) error {
 			},
 		}
 
-		_, err := s.client.DeleteObjects(ctx, input)
+		_, err = s.client.DeleteObjects(ctx, input)
 		if err != nil {
 			return fmt.Errorf("s3 storage: failed to delete directory: %w", err)
 		}
@@ -182,14 +181,17 @@ func (s *S3Storage) DeleteDir(ctx context.Context, path string) error {
 
 // Move 移动/重命名对象（S3 无原生 move：对前缀下每个对象 copy 到新键再删除原键）
 func (s *S3Storage) Move(ctx context.Context, from, to string) error {
-	from = strings.TrimPrefix(filepath.ToSlash(filepath.Clean(from)), "/")
-	to = strings.TrimPrefix(filepath.ToSlash(filepath.Clean(to)), "/")
-	if from == ".." || strings.HasPrefix(from, "../") || to == ".." || strings.HasPrefix(to, "../") {
-		return fmt.Errorf("s3 storage: invalid path (contains ..)")
+	cleanFrom, err := cleanStoragePath(from)
+	if err != nil {
+		return fmt.Errorf("s3 storage: invalid source path: %s", from)
+	}
+	cleanTo, err := cleanStoragePath(to)
+	if err != nil {
+		return fmt.Errorf("s3 storage: invalid destination path: %s", to)
 	}
 	// 收集要移动的对象：精确对象 + 该前缀（目录）下的所有对象
-	keys := map[string]struct{}{from: {}}
-	if objs, err := s.ListFiles(ctx, from+"/"); err == nil {
+	keys := map[string]struct{}{cleanFrom: {}}
+	if objs, err := s.ListFiles(ctx, cleanFrom+"/"); err == nil {
 		for _, k := range objs {
 			keys[k] = struct{}{}
 		}
@@ -197,10 +199,10 @@ func (s *S3Storage) Move(ctx context.Context, from, to string) error {
 	for srcKey := range keys {
 		var dstKey string
 		switch {
-		case srcKey == from:
-			dstKey = to
-		case strings.HasPrefix(srcKey, from+"/"):
-			dstKey = to + strings.TrimPrefix(srcKey, from)
+		case srcKey == cleanFrom:
+			dstKey = cleanTo
+		case strings.HasPrefix(srcKey, cleanFrom+"/"):
+			dstKey = cleanTo + strings.TrimPrefix(srcKey, cleanFrom)
 		default:
 			continue
 		}
@@ -224,30 +226,32 @@ func (s *S3Storage) Move(ctx context.Context, from, to string) error {
 
 // GetURL 获取文件访问 URL
 func (s *S3Storage) GetURL(ctx context.Context, path string) (string, error) {
-	// 清理路径
-	path = filepath.ToSlash(filepath.Clean(path))
-	path = strings.TrimPrefix(path, "/")
+	cleanPath, err := cleanStoragePath(path)
+	if err != nil {
+		return "", fmt.Errorf("s3 storage: invalid path: %s", path)
+	}
 
 	// 如果配置了 CDN URL，直接返回
 	if s.urlPrefix != "" {
-		return fmt.Sprintf("%s/%s", s.urlPrefix, path), nil
+		return fmt.Sprintf("%s/%s", s.urlPrefix, cleanPath), nil
 	}
 
 	// 否则返回 S3 直接访问 URL
 	// 注意：这需要 Bucket 配置为公开访问或使用预签名 URL
 	// 这里简化处理，实际生产环境应该生成预签名 URL
-	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", s.bucket, path), nil
+	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", s.bucket, cleanPath), nil
 }
 
 // ListFiles 列出目录下的所有文件
 func (s *S3Storage) ListFiles(ctx context.Context, prefix string) ([]string, error) {
-	// 清理路径
-	prefix = filepath.ToSlash(filepath.Clean(prefix))
-	prefix = strings.TrimPrefix(prefix, "/")
+	cleanPrefix, err := cleanStoragePrefix(prefix)
+	if err != nil {
+		return nil, fmt.Errorf("s3 storage: invalid prefix: %s", prefix)
+	}
 
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),
-		Prefix: aws.String(prefix),
+		Prefix: aws.String(cleanPrefix),
 	}
 
 	var files []string

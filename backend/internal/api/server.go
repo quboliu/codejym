@@ -83,6 +83,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/assets/", s.withAuth(s.handleAssetByID))
 	mux.HandleFunc("/api/sessions", s.withAuth(s.handleSessions))
 	mux.HandleFunc("/api/sessions/", s.withAuth(s.handleSessionByID))
+	mux.HandleFunc("/api/fill-in/enter", s.withAuth(s.handleFillInEnter))
+	mux.HandleFunc("/api/fill-in/sessions/", s.withAuth(s.handleFillInSessionByID))
+	mux.HandleFunc("/api/model-config", s.withAuth(s.handleModelConfig))
+	mux.HandleFunc("/api/model-config/test", s.withAuth(s.handleModelConfigTest))
 
 	// 应用安全中间件
 	handler := withSecurityHeaders(withCORS(logRequests(mux, s.logger)))
@@ -816,16 +820,10 @@ type fileNode struct {
 }
 
 type fileContent struct {
-	Name       string      `json:"name"`
-	Path       string      `json:"path"`
-	Language   string      `json:"language"`
-	Content    string      `json:"content"`
-	SkipRanges []skipRange `json:"skipRanges"`
-}
-
-type skipRange struct {
-	Start int `json:"start"`
-	End   int `json:"end"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Language string `json:"language"`
+	Content  string `json:"content"`
 }
 
 func toAssetDTO(a *storage.Asset) assetDTO {
@@ -888,7 +886,7 @@ func (lrw *loggingResponseWriter) WriteHeader(statusCode int) {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -1172,15 +1170,11 @@ func readAssetFile(root, rel string) (*fileContent, error) {
 	language := detectLanguage(cleanRel)
 	content := string(data)
 
-	// 查找注释范围（不删除注释，只标记位置）
-	skipRanges := FindCommentRanges(content, language)
-
 	return &fileContent{
-		Name:       filepath.Base(cleanRel),
-		Path:       filepath.ToSlash(cleanRel),
-		Language:   language,
-		Content:    content,
-		SkipRanges: skipRanges,
+		Name:     filepath.Base(cleanRel),
+		Path:     filepath.ToSlash(cleanRel),
+		Language: language,
+		Content:  content,
 	}, nil
 }
 
@@ -1287,14 +1281,9 @@ func (s *Server) handleAssetMkdir(user *storage.User, id string, w http.Response
 		writeError(w, http.StatusBadRequest, "invalid json payload")
 		return
 	}
-	relPath := strings.TrimSpace(payload.Path)
-	if relPath == "" {
+	relPath, ok := cleanRelPath(payload.Path)
+	if !ok {
 		writeError(w, http.StatusBadRequest, "path is required")
-		return
-	}
-	// 验证路径安全性
-	if !isValidRelPath(relPath) {
-		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	asset, err := s.store.GetAsset(r.Context(), user.ID, id)
@@ -1330,15 +1319,10 @@ func (s *Server) handleAssetMoveFile(user *storage.User, id string, w http.Respo
 		writeError(w, http.StatusBadRequest, "invalid json payload")
 		return
 	}
-	fromPath := strings.TrimSpace(payload.From)
-	toPath := strings.TrimSpace(payload.To)
-	if fromPath == "" || toPath == "" {
+	fromPath, fromOK := cleanRelPath(payload.From)
+	toPath, toOK := cleanRelPath(payload.To)
+	if !fromOK || !toOK {
 		writeError(w, http.StatusBadRequest, "from and to paths are required")
-		return
-	}
-	// 验证路径安全性
-	if !isValidRelPath(fromPath) || !isValidRelPath(toPath) {
-		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	asset, err := s.store.GetAsset(r.Context(), user.ID, id)
@@ -1373,19 +1357,14 @@ func (s *Server) handleAssetRenameFile(user *storage.User, id string, w http.Res
 		writeError(w, http.StatusBadRequest, "invalid json payload")
 		return
 	}
-	relPath := strings.TrimSpace(payload.Path)
+	relPath, pathOK := cleanRelPath(payload.Path)
 	newName := strings.TrimSpace(payload.NewName)
-	if relPath == "" || newName == "" {
+	if !pathOK || newName == "" {
 		writeError(w, http.StatusBadRequest, "path and newName are required")
 		return
 	}
-	// 验证路径安全性
-	if !isValidRelPath(relPath) {
-		writeError(w, http.StatusBadRequest, "invalid path")
-		return
-	}
 	// 确保新名称不包含路径分隔符
-	if strings.ContainsAny(newName, "/\\") {
+	if !isValidBaseName(newName) {
 		writeError(w, http.StatusBadRequest, "newName cannot contain path separators")
 		return
 	}
@@ -1413,14 +1392,9 @@ func (s *Server) handleAssetDeleteFile(user *storage.User, id string, w http.Res
 		methodNotAllowed(w, http.MethodDelete, http.MethodPost)
 		return
 	}
-	relPath := r.URL.Query().Get("path")
-	if relPath == "" {
+	relPath, ok := cleanRelPath(r.URL.Query().Get("path"))
+	if !ok {
 		writeError(w, http.StatusBadRequest, "path query parameter is required")
-		return
-	}
-	// 验证路径安全性
-	if !isValidRelPath(relPath) {
-		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	asset, err := s.store.GetAsset(r.Context(), user.ID, id)
@@ -1615,16 +1589,8 @@ func (s *Server) handleAssetPasteToExisting(user *storage.User, assetID string, 
 
 // isValidRelPath 验证相对路径的安全性
 func isValidRelPath(relPath string) bool {
-	cleanPath := filepath.Clean(relPath)
-	// 拒绝绝对路径
-	if filepath.IsAbs(cleanPath) {
-		return false
-	}
-	// 拒绝包含 .. 的路径（防止路径遍历攻击）
-	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, string(filepath.Separator)+"..") {
-		return false
-	}
-	return true
+	_, ok := cleanRelPath(relPath)
+	return ok
 }
 
 // SeedDemoUser 幂等地确保演示账号存在（含默认训练组），用于「前端预填、免注册直接登录」。

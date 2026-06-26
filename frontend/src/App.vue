@@ -114,6 +114,12 @@
                 <div class="user-email">{{ user.email }}</div>
               </div>
               <div class="dropdown-divider"></div>
+              <button class="dropdown-item" @click="openModelSettings">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 5H16M6 10H14M8 15H12" stroke-linecap="round"/>
+                </svg>
+                模型设置
+              </button>
               <button class="dropdown-item" @click="handleLogout">
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M8 17H3V3H8M13 13L17 9L13 5M17 9H8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -226,6 +232,30 @@
               <div class="progress-fill" :style="{ width: progress + '%' }"></div>
             </div>
 
+            <div class="mode-bar">
+              <div class="mode-tabs" role="tablist" aria-label="练习模式">
+                <button
+                  class="mode-tab"
+                  :class="{ active: practiceMode === 'trace' }"
+                  type="button"
+                  @click="setPracticeMode('trace')"
+                >
+                  描红
+                </button>
+                <button
+                  class="mode-tab"
+                  :class="{ active: practiceMode === 'fill' }"
+                  type="button"
+                  @click="setPracticeMode('fill')"
+                >
+                  填空
+                </button>
+              </div>
+              <div v-if="practiceMode === 'fill' && fillInPractice" class="mode-detail">
+                {{ fillInPractice.template.difficulty }} · {{ fillInPractice.template.provider || 'local' }} · {{ fillInPractice.template.intent }}
+              </div>
+            </div>
+
             <!-- 统计栏 -->
             <div class="stats-bar">
               <div class="stat">
@@ -241,27 +271,59 @@
                 <span class="stat-value">{{ formatDuration(elapsedSeconds) }}</span>
               </div>
               <div class="stat">
-                <span class="stat-label">速度</span>
-                <span class="stat-value">{{ computeWPM(cursor, elapsedSeconds) }} WPM</span>
+                <span class="stat-label">{{ practiceMode === 'trace' ? '速度' : '空数' }}</span>
+                <span class="stat-value">{{ practiceMode === 'trace' ? `${computeWPM(cursor, elapsedSeconds)} WPM` : fillInBlankCount }}</span>
               </div>
               <div class="stat">
                 <span class="stat-label">错误</span>
-                <span class="stat-value" :class="{ 'text-error': errors > 0 }">{{ errors }}</span>
+                <span class="stat-value" :class="{ 'text-error': displayErrors > 0 }">{{ displayErrors }}</span>
               </div>
             </div>
 
             <!-- 临摹区域 -->
-            <div class="practice-area">
+            <div
+              v-if="practiceMode === 'trace'"
+              class="practice-area"
+              @pointerdown="focusTypingInput"
+              @click="focusTypingInput"
+            >
               <PracticeCanvas
                 :content="fileContent"
                 :cursor="cursor"
                 :error-flash="flashError"
                 :background-opacity="backgroundOpacity"
               />
+              <textarea
+                ref="typingInputRef"
+                class="typing-input"
+                aria-label="练习输入"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                inputmode="text"
+                @input="handleTypingInput"
+                @compositionstart="handleCompositionStart"
+                @compositionend="handleCompositionEnd"
+              />
+            </div>
+
+            <div v-else class="practice-area">
+              <div v-if="fillInLoading" class="fillin-loading">正在准备填空模板...</div>
+              <FillInCanvas
+                v-else-if="fillInPractice"
+                :source="fillInPractice.source"
+                :template="fillInPractice.template"
+                :blanks="fillInPractice.blanks"
+                :inputs="fillBlankInputs"
+                @update-input="setFillBlankInput"
+                @submit="submitFillBlank"
+                @reveal="revealFillBlank"
+              />
+              <div v-else class="fillin-loading">暂无可用填空模板</div>
             </div>
 
             <!-- 操作栏 -->
-            <div class="action-bar">
+            <div v-if="practiceMode === 'trace'" class="action-bar">
               <div class="action-hint">
                 <kbd>Backspace</kbd> 回退
                 <span class="divider">|</span>
@@ -291,6 +353,22 @@
                   跳过当前行
                 </button>
                 <button class="btn btn-ghost btn-sm" @click="handleResetProgress" :disabled="!session">
+                  重置进度
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="action-bar">
+              <div class="action-hint">
+                <kbd>Enter</kbd> 校验当前空
+                <span class="divider">|</span>
+                <kbd>Tab</kbd> 切换输入
+              </div>
+              <div class="action-buttons">
+                <button class="btn btn-ghost btn-sm" @click="switchFillTemplate" :disabled="!fillInPractice || fillInLoading">
+                  换一个模板
+                </button>
+                <button class="btn btn-ghost btn-sm" @click="handleResetProgress" :disabled="!fillInPractice">
                   重置进度
                 </button>
               </div>
@@ -422,6 +500,56 @@
       </div>
     </Modal>
 
+    <!-- 模型设置 Modal -->
+    <Modal
+      v-model="showModelSettingsModal"
+      title="模型设置"
+      size="md"
+      confirm-text="保存"
+      :confirm-disabled="modelConfigSaving"
+      @confirm="submitModelSettings"
+      @cancel="closeModelSettings"
+    >
+      <div class="form-group">
+        <label for="model-provider">供应商</label>
+        <select id="model-provider" class="select" v-model="modelProvider">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai-compatible">OpenAI-compatible / GPT</option>
+          <option value="anthropic">Anthropic / Claude</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="model-name">模型</label>
+        <input id="model-name" class="input" v-model="modelName" placeholder="deepseek-chat" />
+      </div>
+      <div class="form-group">
+        <label for="model-base-url">Base URL</label>
+        <input id="model-base-url" class="input" v-model="modelBaseUrl" placeholder="可选，自定义兼容接口地址" />
+      </div>
+      <div class="form-group">
+        <label for="model-api-key">API Key</label>
+        <input id="model-api-key" class="input" type="password" v-model="modelApiKey" :placeholder="modelKeyHint || '留空则保留当前 Key 或使用外部开发配置'" />
+        <small class="form-hint">Key 只提交给后端加密保存，不进入仓库，也不会在前端回显。</small>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="modelSourceAccessEnabled" />
+        <span>允许将当前文件内容发送给模型生成填空模板</span>
+      </label>
+      <div class="model-status">
+        <span v-if="modelHasKey">已保存 Key：{{ modelKeyHint }}</span>
+        <span v-else-if="modelUsingDevelopmentKey">未保存用户 Key，将使用外部开发/部署 Key</span>
+        <span v-else>未配置 Key，填空模式将使用本地基础模板</span>
+      </div>
+      <div class="model-settings-actions">
+        <button class="btn btn-secondary btn-sm" type="button" @click="testCurrentModelSettings" :disabled="modelConfigSaving || modelConfigTesting">
+          {{ modelConfigTesting ? '测试中...' : '测试连接' }}
+        </button>
+        <button class="btn btn-secondary btn-sm" type="button" @click="removeModelSettings" :disabled="modelConfigSaving">
+          删除用户配置
+        </button>
+      </div>
+    </Modal>
+
     <!-- 右键菜单 -->
     <ContextMenu
       :visible="showContextMenu"
@@ -433,9 +561,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import AssetList from './components/AssetList.vue'
 import FileTree from './components/FileTree.vue'
+import FillInCanvas from './components/FillInCanvas.vue'
 import PracticeCanvas from './components/PracticeCanvas.vue'
 import Modal from './components/common/Modal.vue'
 import Toast from './components/common/Toast.vue'
@@ -445,11 +574,20 @@ import LandingPage from './components/LandingPage.vue'
 import { useToast, toastRef as globalToastRef } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import {
+  advanceCursorForTypedChar,
+  clampCursor,
+  moveCursorBack,
+  nextSourceLineCursor,
+} from './practiceCursor'
+import {
   createAsset,
   createDirectory,
   createSession,
+  deleteModelConfig,
   deleteAsset,
   deleteFile,
+  enterFillInPractice,
+  fetchModelConfig,
   fetchCurrentUser,
   fetchFileContent,
   fetchFileTree,
@@ -459,15 +597,21 @@ import {
   moveFile,
   patchSession,
   querySession,
+  resetFillInSession,
+  revealFillInBlank,
   renameAsset,
   renameFile,
+  saveModelConfig,
   setAuthToken,
   setUnauthorizedHandler,
   signup,
+  submitFillInAnswer,
+  switchFillInTemplate,
+  testModelConfig,
   uploadFileToAsset,
   uploadPasteToAsset,
 } from './api'
-import type { Asset, FileNode, FileContent, Session, User } from './types'
+import type { Asset, FileNode, FileContent, FillInPractice, Session, User } from './types'
 
 const AUTH_TOKEN_KEY = 'codecopybook_token'
 
@@ -478,6 +622,92 @@ const { theme, isDark, toggleTheme } = useTheme()
 // 主题切换
 function handleToggleTheme() {
   toggleTheme()
+}
+
+async function openModelSettings() {
+  showModelSettingsModal.value = true
+  modelApiKey.value = ''
+  try {
+    const cfg = await fetchModelConfig()
+    modelProvider.value = cfg.provider
+    modelName.value = cfg.model
+    modelBaseUrl.value = cfg.baseUrl
+    modelKeyHint.value = cfg.keyHint
+    modelHasKey.value = cfg.hasKey
+    modelUsingDevelopmentKey.value = cfg.usingDevelopmentKey
+    modelSourceAccessEnabled.value = cfg.sourceAccessEnabled
+  } catch (err) {
+    toast.error((err as Error).message)
+  }
+}
+
+function closeModelSettings() {
+  modelApiKey.value = ''
+}
+
+async function submitModelSettings() {
+  modelConfigSaving.value = true
+  try {
+    const cfg = await saveModelConfig({
+      provider: modelProvider.value,
+      model: modelName.value.trim(),
+      baseUrl: modelBaseUrl.value.trim(),
+      apiKey: modelApiKey.value.trim() || undefined,
+      sourceAccessEnabled: modelSourceAccessEnabled.value,
+    })
+    modelProvider.value = cfg.provider
+    modelName.value = cfg.model
+    modelBaseUrl.value = cfg.baseUrl
+    modelKeyHint.value = cfg.keyHint
+    modelHasKey.value = cfg.hasKey
+    modelUsingDevelopmentKey.value = cfg.usingDevelopmentKey
+    modelSourceAccessEnabled.value = cfg.sourceAccessEnabled
+    modelApiKey.value = ''
+    showModelSettingsModal.value = false
+    toast.success('模型设置已保存')
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    modelConfigSaving.value = false
+  }
+}
+
+async function testCurrentModelSettings() {
+  modelConfigTesting.value = true
+  try {
+    await testModelConfig({
+      provider: modelProvider.value,
+      model: modelName.value.trim(),
+      baseUrl: modelBaseUrl.value.trim(),
+      apiKey: modelApiKey.value.trim() || undefined,
+    })
+    toast.success('模型连接正常')
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    modelConfigTesting.value = false
+  }
+}
+
+async function removeModelSettings() {
+  if (!window.confirm('确定删除当前用户模型配置吗？')) return
+  modelConfigSaving.value = true
+  try {
+    const cfg = await deleteModelConfig()
+    modelProvider.value = cfg.provider
+    modelName.value = cfg.model
+    modelBaseUrl.value = cfg.baseUrl
+    modelKeyHint.value = cfg.keyHint
+    modelHasKey.value = cfg.hasKey
+    modelUsingDevelopmentKey.value = cfg.usingDevelopmentKey
+    modelSourceAccessEnabled.value = cfg.sourceAccessEnabled
+    modelApiKey.value = ''
+    toast.success('模型配置已删除')
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    modelConfigSaving.value = false
+  }
 }
 
 // 调整背景描红透明度
@@ -536,34 +766,78 @@ const treeLoading = ref(false)
 const selectedPath = ref<string | null>(null)
 const fileContent = ref<FileContent | null>(null)
 const session = ref<Session | null>(null)
+type PracticeMode = 'trace' | 'fill'
+const practiceMode = ref<PracticeMode>('trace')
+const fillInPractice = ref<FillInPractice | null>(null)
+const fillInLoading = ref(false)
+const fillBlankInputs = ref<Record<string, string>>({})
 
 // 练习状态
 const cursor = ref(0)
 const errors = ref(0)
 const elapsedSeconds = ref(0)
 const flashError = ref(false)
+const typingInputRef = ref<HTMLTextAreaElement | null>(null)
+const composing = ref(false)
 const uploading = ref(false)
 const pasting = ref(false)
 const pasteFilename = ref('')
 const pasteContent = ref('')
+
+// 模型设置
+const showModelSettingsModal = ref(false)
+const modelConfigSaving = ref(false)
+const modelConfigTesting = ref(false)
+const modelProvider = ref('deepseek')
+const modelName = ref('deepseek-chat')
+const modelBaseUrl = ref('')
+const modelApiKey = ref('')
+const modelKeyHint = ref('')
+const modelHasKey = ref(false)
+const modelUsingDevelopmentKey = ref(false)
+const modelSourceAccessEnabled = ref(true)
 
 // 背景描红透明度设置（默认0.5，范围0.2-0.8）
 const backgroundOpacity = ref(parseFloat(localStorage.getItem('backgroundOpacity') || '0.5'))
 
 // 计算属性
 const progress = computed(() => {
+  if (practiceMode.value === 'fill') {
+    const total = fillInPractice.value?.session.totalBlanks ?? 0
+    if (total === 0) return 0
+    return Math.round(((fillInPractice.value?.session.completedBlanks ?? 0) / total) * 100)
+  }
   if (!fileContent.value) return 0
   if (fileContent.value.content.length === 0) return 0
   return Math.round((cursor.value / fileContent.value.content.length) * 100)
 })
 
 const accuracy = computed(() => {
+  if (practiceMode.value === 'fill') {
+    const totalErrors = fillInPractice.value?.blanks.reduce((sum, blank) => sum + blank.errorCount, 0) ?? 0
+    const completed = fillInPractice.value?.session.completedBlanks ?? 0
+    if (completed + totalErrors === 0) return 100
+    return Math.max(0, Math.round((completed / (completed + totalErrors)) * 100))
+  }
   if (cursor.value + errors.value === 0) return 100
   return Math.max(0, Math.round((cursor.value / (cursor.value + errors.value)) * 100))
 })
 
 const canSkipLine = computed(() => {
-  return !!(fileContent.value && cursor.value < fileContent.value.content.length)
+  return !!(practiceMode.value === 'trace' && fileContent.value && cursor.value < fileContent.value.content.length)
+})
+
+const fillInBlankCount = computed(() => {
+  const completed = fillInPractice.value?.session.completedBlanks ?? 0
+  const total = fillInPractice.value?.session.totalBlanks ?? 0
+  return `${completed}/${total}`
+})
+
+const displayErrors = computed(() => {
+  if (practiceMode.value === 'fill') {
+    return fillInPractice.value?.blanks.reduce((sum, blank) => sum + blank.errorCount, 0) ?? 0
+  }
+  return errors.value
 })
 
 // Toast组件引用
@@ -637,6 +911,7 @@ function anyChange(): boolean {
 // 保存当前进度。periodic（默认）只在实质变化时写；force 用于收尾，连用时一起落库。
 // keepalive 用于页面卸载/隐藏时仍能把请求发出去。
 async function flushProgress(opts?: { keepalive?: boolean; force?: boolean }): Promise<void> {
+  if (practiceMode.value !== 'trace') return
   if (!session.value) return
   if (opts?.force ? !anyChange() : !meaningfulChange()) return
   const payload = {
@@ -660,14 +935,14 @@ function stopTimers() {
 
 // 页面隐藏/卸载时兜底保存最后一笔进度（keepalive 使请求能在卸载后送达）
 function handleHiddenFlush() {
-  if (document.visibilityState === 'hidden') {
+  if (practiceMode.value === 'trace' && document.visibilityState === 'hidden') {
     void flushProgress({ keepalive: true, force: true })
   }
 }
 
-watch([() => session.value, () => fileContent.value], () => {
+watch([() => session.value, () => fileContent.value, () => practiceMode.value], () => {
   stopTimers() // 先停旧计时器——session/fileContent 变为空时也能正确清理（修复计时器泄漏）
-  if (session.value && fileContent.value) {
+  if (practiceMode.value === 'trace' && session.value && fileContent.value) {
     // 以服务器返回的初始进度为基线，避免刚加载就触发一次重复保存
     lastSaved = {
       cursor: cursor.value,
@@ -746,6 +1021,8 @@ function resetState() {
   selectedPath.value = null
   fileContent.value = null
   session.value = null
+  fillInPractice.value = null
+  fillBlankInputs.value = {}
   cursor.value = 0
   errors.value = 0
   elapsedSeconds.value = 0
@@ -840,6 +1117,8 @@ async function handleSelectAsset(id: string) {
   selectedPath.value = null
   fileContent.value = null
   session.value = null
+  fillInPractice.value = null
+  fillBlankInputs.value = {}
   cursor.value = 0
   errors.value = 0
   elapsedSeconds.value = 0
@@ -928,6 +1207,8 @@ async function handleDeleteAsset(id: string) {
       selectedAsset.value = null
       selectedPath.value = null
       fileContent.value = null
+      fillInPractice.value = null
+      fillBlankInputs.value = {}
       tree.value = []
     }
 
@@ -1024,6 +1305,8 @@ async function handleDeleteFileClick(node: FileNode) {
     if (selectedPath.value === node.path) {
       selectedPath.value = null
       fileContent.value = null
+      fillInPractice.value = null
+      fillBlankInputs.value = {}
     }
 
     await refreshFileTree()
@@ -1061,10 +1344,13 @@ async function handleSelectFile(path: string) {
     elapsedSeconds.value = sessionData.durationSeconds ?? 0
     fileContent.value = content
 
-    // 设置cursor - 总是跳到第一个需要输入的字符
-    // 直接传递 content 避免响应式时序问题
-    const initialCursor = Math.min(sessionData.cursor ?? 0, content.content.length)
-    cursor.value = findNextNonCommentPositionDirect(initialCursor, content)
+    cursor.value = clampCursor(content.content, sessionData.cursor ?? 0)
+    await nextTick()
+    if (practiceMode.value === 'fill') {
+      await loadFillInPractice()
+    } else {
+      focusTypingInput()
+    }
   } catch (err) {
     toast.error((err as Error).message)
   }
@@ -1087,18 +1373,161 @@ async function ensureSession(assetId: string, filePath: string) {
   }
 }
 
+async function setPracticeMode(mode: PracticeMode) {
+  if (practiceMode.value === mode) return
+  if (practiceMode.value === 'trace') {
+    await flushProgress({ force: true })
+  }
+  practiceMode.value = mode
+  if (mode === 'fill') {
+    stopTimers()
+    await loadFillInPractice()
+  } else {
+    await nextTick()
+    focusTypingInput()
+  }
+}
+
+async function loadFillInPractice() {
+  if (!selectedAsset.value || !selectedPath.value) return
+  fillInLoading.value = true
+  try {
+    const data = await enterFillInPractice(selectedAsset.value, selectedPath.value)
+    fillInPractice.value = data
+    fillBlankInputs.value = Object.fromEntries(
+      data.blanks.map(blank => [blank.id, blank.currentInput || blank.answer || ''])
+    )
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    fillInLoading.value = false
+  }
+}
+
+function setFillBlankInput(blankId: string, value: string) {
+  fillBlankInputs.value = {
+    ...fillBlankInputs.value,
+    [blankId]: value,
+  }
+}
+
+function updateFillBlank(blankId: string, patch: Partial<FillInPractice['blanks'][number]>) {
+  if (!fillInPractice.value) return
+  fillInPractice.value = {
+    ...fillInPractice.value,
+    blanks: fillInPractice.value.blanks.map(blank =>
+      blank.id === blankId ? { ...blank, ...patch } : blank
+    ),
+  }
+}
+
+function updateFillSession(status: FillInPractice['session']['status'], outcome: FillInPractice['session']['completionOutcome']) {
+  if (!fillInPractice.value) return
+  const completedBlanks = fillInPractice.value.blanks.filter(blank =>
+    blank.status === 'correct' || blank.status === 'revealed'
+  ).length
+  fillInPractice.value = {
+    ...fillInPractice.value,
+    session: {
+      ...fillInPractice.value.session,
+      status,
+      completionOutcome: outcome,
+      completedBlanks,
+    },
+  }
+}
+
+async function submitFillBlank(blankId: string) {
+  if (!fillInPractice.value) return
+  const input = fillBlankInputs.value[blankId] ?? ''
+  try {
+    const result = await submitFillInAnswer(fillInPractice.value.session.id, blankId, input)
+    updateFillBlank(blankId, {
+      status: result.status,
+      currentInput: input,
+      errorCount: result.errorCount,
+    })
+    updateFillSession(result.sessionStatus, result.outcome)
+    if (result.correct) {
+      toast.success('回答正确')
+    } else {
+      toast.error('答案不匹配')
+    }
+  } catch (err) {
+    toast.error((err as Error).message)
+  }
+}
+
+async function revealFillBlank(blankId: string) {
+  if (!fillInPractice.value) return
+  if (!window.confirm('显示答案后，这个空不会计为独立答对。继续吗？')) return
+  try {
+    const result = await revealFillInBlank(fillInPractice.value.session.id, blankId)
+    setFillBlankInput(blankId, result.answer)
+    updateFillBlank(blankId, {
+      status: result.status,
+      currentInput: result.answer,
+      revealed: true,
+      answer: result.answer,
+    })
+    updateFillSession(result.sessionStatus, result.outcome)
+  } catch (err) {
+    toast.error((err as Error).message)
+  }
+}
+
+async function switchFillTemplate() {
+  if (!fillInPractice.value) return
+  fillInLoading.value = true
+  try {
+    const data = await switchFillInTemplate(fillInPractice.value.session.id)
+    fillInPractice.value = data
+    fillBlankInputs.value = Object.fromEntries(
+      data.blanks.map(blank => [blank.id, blank.currentInput || blank.answer || ''])
+    )
+  } catch (err) {
+    toast.error((err as Error).message)
+  } finally {
+    fillInLoading.value = false
+  }
+}
+
 // 练习控制
 function skipCurrentLine() {
   if (!fileContent.value) return
   if (cursor.value >= fileContent.value.content.length) return
 
-  const newlineIndex = fileContent.value.content.indexOf('\n', cursor.value)
-  const nextCursor = newlineIndex === -1 ? fileContent.value.content.length : newlineIndex + 1
-  // 跳过下一行开头的注释
-  cursor.value = findNextNonCommentPosition(nextCursor)
+  cursor.value = nextSourceLineCursor(fileContent.value.content, cursor.value)
 }
 
 async function handleResetProgress() {
+  if (practiceMode.value === 'fill') {
+    if (!fillInPractice.value) return
+    if (!window.confirm('确定要重置当前填空模板的进度吗？此操作不可撤销。')) {
+      return
+    }
+    try {
+      const resetSession = await resetFillInSession(fillInPractice.value.session.id)
+      fillInPractice.value = {
+        ...fillInPractice.value,
+        blanks: fillInPractice.value.blanks.map(blank => ({
+          ...blank,
+          status: 'empty',
+          currentInput: '',
+          errorCount: 0,
+          revealed: false,
+          answer: undefined,
+        })),
+        session: resetSession,
+      }
+      fillBlankInputs.value = {}
+      toast.success('填空进度已重置')
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+    return
+  }
+
   if (!session.value || !fileContent.value) return
 
   // 使用原生confirm（后续可以改成自定义Modal）
@@ -1122,32 +1551,61 @@ async function handleResetProgress() {
   }
 }
 
-// 键盘事件处理
-function handleKeydown(event: KeyboardEvent) {
+function focusTypingInput() {
+  if (practiceMode.value !== 'trace') return
   if (!fileContent.value) return
-  if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName ?? '')) return
-  if (event.metaKey || event.ctrlKey || event.altKey) return
+  if (isTextEntryTarget(document.activeElement)) return
+  typingInputRef.value?.focus({ preventScroll: true })
+}
 
-  if (event.key === 'Backspace') {
-    event.preventDefault()
-    // 向后移动光标，跳过注释
-    const newCursor = findPrevNonCommentPosition(cursor.value - 1)
-    cursor.value = Math.max(0, newCursor)
-    return
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target === typingInputRef.value) return false
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
+}
+
+function resetTypingInput() {
+  if (typingInputRef.value) {
+    typingInputRef.value.value = ''
   }
+}
 
+function handleCompositionStart() {
+  composing.value = true
+}
+
+function handleCompositionEnd() {
+  composing.value = false
+  window.setTimeout(drainTypingInput, 0)
+}
+
+function handleTypingInput(event: Event) {
+  const inputEvent = event as InputEvent
+  if (composing.value || inputEvent.isComposing) return
+  drainTypingInput()
+}
+
+function drainTypingInput() {
+  const input = typingInputRef.value
+  if (!input?.value) return
+  const text = input.value
+  input.value = ''
+  processTypedText(text)
+}
+
+function processTypedText(text: string) {
+  for (const char of text) {
+    acceptTypedChar(char)
+  }
+}
+
+function acceptTypedChar(char: string) {
+  if (!fileContent.value) return
   if (cursor.value >= fileContent.value.content.length) return
 
-  const char = mapKeyToChar(event)
-  if (char === null) return
-
-  event.preventDefault()
-  const expected = fileContent.value.content.charAt(cursor.value)
-
-  if (expected === char) {
-    // 匹配成功，向前移动光标，跳过注释
-    const newCursor = findNextNonCommentPosition(cursor.value + 1)
-    cursor.value = Math.min(fileContent.value.content.length, newCursor)
+  const result = advanceCursorForTypedChar(fileContent.value.content, cursor.value, char)
+  if (result.matched) {
+    cursor.value = result.cursor
   } else {
     errors.value += 1
     flashError.value = true
@@ -1157,51 +1615,31 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-// 检查位置是否在注释范围内
-function isInCommentRange(pos: number): boolean {
-  if (!fileContent.value) return false
-  for (const range of fileContent.value.skipRanges) {
-    if (pos >= range.start && pos < range.end) {
-      return true
-    }
-  }
-  return false
-}
+// 键盘事件处理
+function handleKeydown(event: KeyboardEvent) {
+  if (practiceMode.value !== 'trace') return
+  if (!fileContent.value) return
+  if (isTextEntryTarget(event.target)) return
+  if (event.metaKey || event.ctrlKey || event.altKey) return
+  if (event.isComposing || event.key === 'Process') return
 
-// 直接检查位置是否在注释范围内（不依赖响应式状态）
-function isInCommentRangeDirect(pos: number, content: FileContent): boolean {
-  for (const range of content.skipRanges) {
-    if (pos >= range.start && pos < range.end) {
-      return true
-    }
+  if (event.key === 'Backspace') {
+    event.preventDefault()
+    resetTypingInput()
+    cursor.value = moveCursorBack(fileContent.value.content, cursor.value)
+    return
   }
-  return false
-}
 
-// 找到下一个非注释位置
-function findNextNonCommentPosition(pos: number): number {
-  if (!fileContent.value) return pos
-  while (pos < fileContent.value.content.length && isInCommentRange(pos)) {
-    pos++
-  }
-  return pos
-}
+  if (cursor.value >= fileContent.value.content.length) return
 
-// 直接找到下一个非注释位置（不依赖响应式状态）
-function findNextNonCommentPositionDirect(pos: number, content: FileContent): number {
-  while (pos < content.content.length && isInCommentRangeDirect(pos, content)) {
-    pos++
-  }
-  return pos
-}
+  const char = mapKeyToChar(event)
+  if (char === null) return
 
-// 找到前一个非注释位置
-function findPrevNonCommentPosition(pos: number): number {
-  if (!fileContent.value) return pos
-  while (pos >= 0 && isInCommentRange(pos)) {
-    pos--
-  }
-  return Math.max(0, pos)
+  if (event.target === typingInputRef.value && event.key.length === 1) return
+
+  event.preventDefault()
+  acceptTypedChar(char)
+  focusTypingInput()
 }
 
 function mapKeyToChar(event: KeyboardEvent): string | null {
@@ -1573,6 +2011,51 @@ function computeWPM(chars: number, seconds: number) {
   100% { transform: translateX(100%); }
 }
 
+.mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-xl);
+  background: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mode-tabs {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+
+.mode-tab {
+  min-width: 64px;
+  padding: var(--space-xs) var(--space-md);
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.mode-tab.active {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.mode-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 /* 统计栏 */
 .stats-bar {
   display: flex;
@@ -1614,6 +2097,30 @@ function computeWPM(chars: number, seconds: number) {
   padding: var(--space-xl);
 }
 
+.fillin-loading {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.typing-input {
+  position: fixed;
+  top: 0;
+  left: -1000px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  pointer-events: none;
+}
+
 /* 操作栏 */
 .action-bar {
   display: flex;
@@ -1645,6 +2152,34 @@ function computeWPM(chars: number, seconds: number) {
 
 .divider {
   color: var(--color-border);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.checkbox-row input {
+  margin-top: 3px;
+}
+
+.model-status {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.model-settings-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .opacity-control {

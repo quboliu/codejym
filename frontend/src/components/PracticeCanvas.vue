@@ -69,19 +69,9 @@ const displayContent = computed(() => {
   const temp = document.createElement('div')
   temp.innerHTML = highlighted
 
-  // 遍历所有文本节点，标记completed/remaining/comment并插入光标
+  // 遍历所有文本节点，只按光标进度标记 completed / remaining 并插入光标。
   let charCount = 0
   let cursorInserted = false
-
-  // 检查位置是否在注释范围内
-  function isInCommentRange(pos: number): boolean {
-    for (const range of props.content.skipRanges) {
-      if (pos >= range.start && pos < range.end) {
-        return true
-      }
-    }
-    return false
-  }
 
   // 提取父元素的 hljs 相关 class
   function getParentHljsClasses(node: Node): string {
@@ -109,8 +99,7 @@ const displayContent = computed(() => {
         return  // 不递归子节点
       } else if (nodeStart > props.cursor) {
         // 整个元素都是未完成 - 直接添加 class，保留原有高亮
-        const inComment = isInCommentRange(nodeStart)
-        element.classList.add(inComment ? 'code-comment' : 'code-remaining')
+        element.classList.add('code-remaining')
         charCount += elementText.length
         return  // 不递归子节点
       }
@@ -138,9 +127,7 @@ const displayContent = computed(() => {
         // 整个节点都是未完成（光标在节点之前）
         const span = document.createElement('span')
         const hljsClasses = getParentHljsClasses(node)
-        const inComment = isInCommentRange(nodeStart)
-        const statusClass = inComment ? 'code-comment' : 'code-remaining'
-        span.className = hljsClasses ? `${hljsClasses} ${statusClass}` : statusClass
+        span.className = hljsClasses ? `${hljsClasses} code-remaining` : 'code-remaining'
         span.textContent = text
         node.parentNode!.replaceChild(span, node)
       } else if (!cursorInserted) {
@@ -161,9 +148,7 @@ const displayContent = computed(() => {
         cursorSpan.className = 'cursor-line'
 
         const remainingSpan = document.createElement('span')
-        const inComment = isInCommentRange(props.cursor)
-        const statusClass = inComment ? 'code-comment' : 'code-remaining'
-        remainingSpan.className = hljsClasses ? `${hljsClasses} ${statusClass}` : statusClass
+        remainingSpan.className = hljsClasses ? `${hljsClasses} code-remaining` : 'code-remaining'
         remainingSpan.textContent = after
 
         // 替换原节点
@@ -300,10 +285,11 @@ function displayChar(char: string) {
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.6;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  word-break: keep-all;
+  white-space: pre;
+  min-width: max-content;
+  word-wrap: normal;
+  overflow-wrap: normal;
+  word-break: normal;
   tab-size: 2;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -345,6 +331,11 @@ function displayChar(char: string) {
   filter: brightness(0.9) !important;
 }
 
+/* 浅色主题下，让已完成的语法色更饱和、更深一些 */
+:global([data-theme="light"] .code-foreground .code-completed[class*="hljs-"]) {
+  filter: saturate(1.55) contrast(1.12) brightness(0.86) !important;
+}
+
 /* 已完成但没有高亮的普通文本 */
 .code-foreground :deep(.code-completed:not([class*="hljs-"])) {
   color: var(--color-text-primary);
@@ -353,12 +344,6 @@ function displayChar(char: string) {
 /* 未完成的代码 - 隐藏 */
 .code-foreground :deep(.code-remaining) {
   visibility: hidden;
-}
-
-/* 注释 - 显示但颜色更淡（不需要输入） */
-.code-foreground :deep(.code-comment) {
-  color: var(--color-text-tertiary);
-  opacity: 0.5;
 }
 
 /* 光标 */

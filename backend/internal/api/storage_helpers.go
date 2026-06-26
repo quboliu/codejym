@@ -185,16 +185,13 @@ func sortFileNodes(nodes []fileNode) {
 
 // readAssetFileFromStorage 从存储读取文件内容
 func readAssetFileFromStorage(ctx context.Context, fileStorage storage.FileStorage, basePath, rel string) (*fileContent, error) {
-	cleanRel := filepath.Clean(rel)
-	if strings.HasPrefix(cleanRel, "..") {
-		return nil, fmt.Errorf("invalid path")
-	}
-	if filepath.IsAbs(cleanRel) {
+	cleanRel, ok := cleanRelPath(rel)
+	if !ok {
 		return nil, fmt.Errorf("invalid path")
 	}
 
 	// 构建存储路径
-	storagePath := path.Join(basePath, filepath.ToSlash(cleanRel))
+	storagePath := path.Join(basePath, cleanRel)
 
 	// 从存储读取文件
 	reader, err := fileStorage.GetFile(ctx, storagePath)
@@ -212,16 +209,38 @@ func readAssetFileFromStorage(ctx context.Context, fileStorage storage.FileStora
 	language := detectLanguage(cleanRel)
 	content := string(data)
 
-	// 查找注释范围（不删除注释，只标记位置）
-	skipRanges := FindCommentRanges(content, language)
-
 	return &fileContent{
-		Name:       filepath.Base(cleanRel),
-		Path:       filepath.ToSlash(cleanRel),
-		Language:   language,
-		Content:    content,
-		SkipRanges: skipRanges,
+		Name:     filepath.Base(cleanRel),
+		Path:     filepath.ToSlash(cleanRel),
+		Language: language,
+		Content:  content,
 	}, nil
+}
+
+func cleanRelPath(relPath string) (string, bool) {
+	normalized := strings.TrimSpace(strings.ReplaceAll(relPath, "\\", "/"))
+	if normalized == "" || path.IsAbs(normalized) {
+		return "", false
+	}
+	for _, part := range strings.Split(normalized, "/") {
+		if part == ".." {
+			return "", false
+		}
+	}
+	clean := path.Clean(normalized)
+	if clean == "." || clean == "" {
+		return "", false
+	}
+	return clean, true
+}
+
+func isValidBaseName(name string) bool {
+	normalized := strings.TrimSpace(strings.ReplaceAll(name, "\\", "/"))
+	return normalized != "" &&
+		normalized != "." &&
+		normalized != ".." &&
+		!strings.Contains(normalized, "/") &&
+		!strings.ContainsRune(normalized, 0)
 }
 
 // detectContentTypeFromFilename 根据文件名检测 Content-Type
@@ -276,4 +295,3 @@ func detectContentTypeFromFilename(filename string) string {
 		return "application/octet-stream"
 	}
 }
-

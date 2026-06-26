@@ -128,8 +128,8 @@ const features = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
   },
   {
-    title: '智能跳过注释',
-    desc: '自动识别注释与空白，让你专注在真正的逻辑代码上。',
+    title: '原文逐字校对',
+    desc: '注释、字符串和代码都按原文练习，敲对才继续前进。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
   },
   {
@@ -151,7 +151,7 @@ const features = [
 
 const steps = [
   { title: '导入代码', desc: '上传一份你想吃透的优秀代码 —— 开源项目、面试题解、或自己的旧作。' },
-  { title: '逐行临摹', desc: '照着原文一个字符一个字符地敲，系统帮你校对、跳过注释。' },
+  { title: '逐行临摹', desc: '照着原文一个字符一个字符地敲，系统帮你校对每一次输入。' },
   { title: '追踪进步', desc: '每次练习都被记录，用时和准确率的提升看得见。' },
 ]
 </script>

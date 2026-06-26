@@ -1,4 +1,16 @@
-import type { Asset, AuthResponse, FileContent, FileNode, Session, User } from './types';
+import type {
+  Asset,
+  AuthResponse,
+  FileContent,
+  FileNode,
+  FillInAnswerResult,
+  FillInPractice,
+  FillInRevealResult,
+  FillInSession,
+  ModelConfig,
+  Session,
+  User,
+} from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
@@ -191,5 +203,72 @@ export function patchSession(
     method: 'PATCH',
     body: JSON.stringify(payload),
     keepalive: opts?.keepalive, // 页面卸载/隐藏时仍能把最后一笔进度发出去
+  });
+}
+
+export function enterFillInPractice(assetId: string, filePath: string) {
+  return request<FillInPractice>('/api/fill-in/enter', {
+    method: 'POST',
+    body: JSON.stringify({ assetId, path: filePath }),
+  });
+}
+
+export function submitFillInAnswer(sessionId: string, blankId: string, input: string) {
+  return request<FillInAnswerResult>(`/api/fill-in/sessions/${sessionId}/answers/${blankId}`, {
+    method: 'POST',
+    body: JSON.stringify({ input }),
+  });
+}
+
+export function revealFillInBlank(sessionId: string, blankId: string) {
+  return request<FillInRevealResult>(`/api/fill-in/sessions/${sessionId}/blanks/${blankId}/reveal`, {
+    method: 'POST',
+  });
+}
+
+export function resetFillInSession(sessionId: string) {
+  return request<FillInSession>(`/api/fill-in/sessions/${sessionId}/reset`, {
+    method: 'POST',
+  });
+}
+
+export function switchFillInTemplate(sessionId: string) {
+  return request<FillInPractice>(`/api/fill-in/sessions/${sessionId}/switch-template`, {
+    method: 'POST',
+  });
+}
+
+export function fetchModelConfig() {
+  return request<ModelConfig>('/api/model-config');
+}
+
+export function saveModelConfig(payload: {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  apiKey?: string;
+  sourceAccessEnabled: boolean;
+}) {
+  return request<ModelConfig>('/api/model-config', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testModelConfig(payload: {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  apiKey?: string;
+}) {
+  return request<{ ok: boolean; provider: string; model: string; sample: string }>('/api/model-config/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteModelConfig() {
+  return request<ModelConfig>('/api/model-config', {
+    method: 'DELETE',
   });
 }
