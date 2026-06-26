@@ -1,0 +1,109 @@
+# Release pipeline for CodeJYM. Tags are the source of truth: push vX.Y.Z to
+# rebuild, verify, package, and publish the Docker image artifacts.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  verify:
+    name: Release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Full local release gate
+        env:
+          CI: "true"
+          CLEANUP: "1"
+          COMPOSE_PROJECT_NAME: codejym-release-${{ github.run_id }}
+          PORT: "19080"
+          POSTGRES_PORT: "15433"
+        run: ./scripts/test-local.sh release
+
+  release:
+    name: Build image and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: verify
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve release version
+        id: version
+        run: |
+          if [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/}" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            echo "::error::release tag must look like vX.Y.Z, got ${TAG}"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          IMAGE_REPO="$(printf 'ghcr.io/%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_repo=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
+      - name: Build release image
+        run: |
+          docker build -f config/Dockerfile -t codejym:${{ steps.version.outputs.version }} .
+          docker tag codejym:${{ steps.version.outputs.version }} ${{ steps.version.outputs.image_repo }}:${{ steps.version.outputs.version }}
+          docker tag codejym:${{ steps.version.outputs.version }} ${{ steps.version.outputs.image_repo }}:latest
+      - name: Package OCI image archive
+        run: |
+          docker image save codejym:${{ steps.version.outputs.version }} | gzip > codejym-${{ steps.version.outputs.version }}-linux-amd64.oci.tar.gz
+          sha256sum codejym-${{ steps.version.outputs.version }}-linux-amd64.oci.tar.gz > SHA256SUMS
+      - name: Extract release notes
+        run: |
+          awk -v v="${{ steps.version.outputs.version }}" '
+            $0 ~ "^## " v "([ ]|$)" { grab=1; next }
+            grab && /^## / { exit }
+            grab { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            printf 'CodeJYM %s\n' "${{ steps.version.outputs.version }}" > RELEASE_NOTES.md
+          fi
+      - name: Create or update GitHub Release
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          TITLE="CodeJYM ${{ steps.version.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md --target "${GITHUB_SHA}"
+          fi
+          gh release upload "$TAG" codejym-${{ steps.version.outputs.version }}-linux-amd64.oci.tar.gz SHA256SUMS --clobber
+      - name: Push image to GitHub Container Registry
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push ${{ steps.version.outputs.image_repo }}:${{ steps.version.outputs.version }}
+          docker push ${{ steps.version.outputs.image_repo }}:latest
